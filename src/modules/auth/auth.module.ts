@@ -13,8 +13,7 @@ import { JwtStrategy } from '../../common/strategies/jwt.strategy.js';
     JwtModule.registerAsync({
       useFactory: () => ({
         secret:
-          process.env.JWT_SECRET ||
-          'medsync-jwt-secret-change-in-production',
+          process.env.JWT_SECRET || 'medsync-jwt-secret-change-in-production',
         signOptions: { expiresIn: '15m' },
       }),
     }),
