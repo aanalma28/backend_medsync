@@ -10,14 +10,87 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
   id        String   @id @default(cuid())
-  email     String   @unique
+  user_code String
   name      String?
+  email     String   @unique
   password  String
+  role      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // RELASI BALIK (INVERSE RELATIONS) DITAMBAHKAN DI SINI
+  // Wajib memakai label relasi agar Prisma tidak bingung
+  patientRecipes      DoctorRecipe[]     @relation("PatientRecipes")
+  doctorRecipes       DoctorRecipe[]     @relation("DoctorRecipes")
+  pharmacistRecipes   DoctorRecipe[]     @relation("PharmacistRecipes")
+  
+  patientAppointments DoctorAppoinment[] @relation("PatientAppointments")
+  doctorAppointments  DoctorAppoinment[] @relation("DoctorAppointments")
+}
+
+model Medicine {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  alternate   String
+  description String
+  stock       String
+  price       String
+  expired     DateTime
+
+  // Relasi balik dari RecipeDetail
+  recipeDetails RecipeDetail[]
+}
+
+model DoctorRecipe {
+  id                    String   @id @default(cuid())
+  no_trx                String
+  recipe_date_exec      DateTime
+  
+  // LABEL RELASI DITAMBAHKAN DI SINI
+  patient               User     @relation("PatientRecipes", fields: [patient_id], references: [id])
+  patient_id            String
+  
+  doctor                User     @relation("DoctorRecipes", fields: [doctor_id], references: [id])
+  doctor_id             String
+  
+  pharmacist            User     @relation("PharmacistRecipes", fields: [pharmacist_id], references: [id])
+  pharmacist_id         String
+  
+  status                String
+  take_med_date         DateTime
+  match_medicine_recipe Boolean
+  verify_notes          String
+
+  // Relasi balik dari RecipeDetail
+  recipeDetails         RecipeDetail[]
+}
+
+model RecipeDetail {
+  id          String       @id @default(cuid())
+  
+  recipe      DoctorRecipe @relation(fields: [recipe_id], references: [id])
+  recipe_id   String
+  
+  medicine    Medicine     @relation(fields: [medicine_id], references: [id])
+  medicine_id String
+  
+  rules_using String
+}
+
+model DoctorAppoinment {
+  id         String   @id @default(cuid())
+  
+  // LABEL RELASI DITAMBAHKAN DI SINI
+  patient    User     @relation("PatientAppointments", fields: [patient_id], references: [id])
+  patient_id String
+  
+  doctor     User     @relation("DoctorAppointments", fields: [doctor_id], references: [id])
+  doctor_id  String
+  
+  time_meet  DateTime
 }

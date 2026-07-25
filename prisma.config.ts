@@ -9,6 +9,7 @@ export default defineConfig({
     path: 'prisma/migrations',
   },
   datasource: {
-    url: process.env['DATABASE_URL'],
+    // UBAH BAGIAN INI: Gunakan DIRECT_URL (port 5432) dari file .env kamu
+    url: process.env['DIRECT_URL'],
   },
 });
