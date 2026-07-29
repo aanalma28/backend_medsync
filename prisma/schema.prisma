@@ -4,8 +4,9 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
@@ -13,14 +14,17 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  user_code String
-  name      String?
-  email     String   @unique
-  password  String
-  role      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  user_code              String
+  name                   String?
+  email                  String    @unique
+  password               String
+  role                   String
+  accepted_terms         Boolean   @default(false)
+  remember_token         String?
+  remember_token_expires DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   // RELASI BALIK (INVERSE RELATIONS) DITAMBAHKAN DI SINI
   // Wajib memakai label relasi agar Prisma tidak bingung
