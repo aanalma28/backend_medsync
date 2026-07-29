@@ -1,98 +1,85 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# 🏥 MedSync Backend API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+MedSync adalah sistem *backend* Manajemen Informasi Klinik / Rumah Sakit (SIMRS) berarsitektur *single-tenant*. Sistem ini dirancang untuk mendigitalisasi alur kerja medis, mulai dari pendaftaran pasien, penjadwalan janji temu dengan dokter, hingga pengelolaan resep obat oleh apoteker.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Dikembangkan dengan fokus pada keamanan data medis, sistem ini dilengkapi dengan pelacakan jejak audit (*audit trail*) untuk persetujuan privasi pasien dan standar autentikasi modern.
 
-## Description
+## 🚀 Teknologi Utama (Tech Stack)
+* **Framework:** [NestJS](https://nestjs.com/) (TypeScript)
+* **ORM:** [Prisma v7](https://www.prisma.io/)
+* **Database:** PostgreSQL (via [Supabase](https://supabase.com/))
+* **Autentikasi:** JWT (Access Token & Refresh Token Strategy) + Passport.js
+* **Keamanan Tambahan:** Role-Based Access Control (RBAC)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## ✨ Fitur Utama (MVP)
+1. **Sistem Autentikasi & Otorisasi Aman**
+   - *Login/Register* terenkripsi (Bcrypt).
+   - *Refresh Token* tersimpan di *database* untuk keamanan *session*.
+   - Pembatasan hak akses (RBAC) untuk 3 peran (Role): `Patient`, `Doctor`, dan `Pharmacist`.
+   - Pencatatan waktu (*Audit Trail*) persetujuan Syarat & Ketentuan / Kebijakan Privasi (Kepatuhan UU PDP).
+2. **Manajemen Medis & Janji Temu**
+   - Penjadwalan pertemuan antara Pasien dan Dokter.
+3. **Farmasi Digital (E-Prescription)**
+   - Dokter dapat membuat resep digital (*Doctor Recipe*).
+   - Apoteker dapat memverifikasi resep, mencocokkan stok obat, dan menambahkan catatan farmasi.
+   - Manajemen inventaris data Obat (*Medicine*).
 
-## Project setup
+## 🛠️ Prasyarat (Prerequisites)
+Pastikan sistem operasi Anda telah memasang:
+* [Node.js](https://nodejs.org/) (v18 atau lebih baru)
+* Akun [Supabase](https://supabase.com/) (untuk koneksi *database*)
+* Git
 
-```bash
-$ npm install
+## ⚙️ Variabel Lingkungan (Environment Variables)
+Buat file `.env` di direktori utama projek (*root*), lalu salin dan sesuaikan nilai di bawah ini. Aplikasi ini menggunakan standar Prisma 7 yang memisahkan jalur koneksi *Pooling* dan *Direct*.
+
+```env
+# Koneksi Database (Supabase)
+# Port 6543 digunakan untuk Pooling (Aplikasi)
+DATABASE_URL="postgres://[USER]:[PASSWORD]@aws-0-[REGION][.pooler.supabase.com:6543/postgres?pgbouncer=true](https://.pooler.supabase.com:6543/postgres?pgbouncer=true)"
+
+# Port 5432 digunakan khusus untuk Migrasi Skema (CLI)
+DIRECT_URL="postgres://[USER]:[PASSWORD]@aws-0-[REGION][.pooler.supabase.com:5432/postgres](https://.pooler.supabase.com:5432/postgres)"
+
+# JWT Secrets
+JWT_ACCESS_SECRET="rahasia_access_token_medsync_super_aman"
+JWT_REFRESH_SECRET="rahasia_refresh_token_medsync_super_aman"
 ```
 
-## Compile and run the project
-
+## 📦 Instalasi & Menjalankan Aplikasi
+1. **Kloing Repositori**
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+git clone https://github.com/aanalma28/backend_medsync.git
+cd backend_medsync
 ```
-
-## Run tests
-
+2. **Install Dependencies**
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
+3. **Buat Database**
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npx prisma generate
+npx prisma migrate dev --name init_db
 ```
+4. **Jalankan Aplikasi**
+```bash
+# Mode pengembangan (Development mode)
+npm run start:dev
+```
+Server akan berjalan di `http://localhost:3000` (atau port yang Anda tentukan).
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## 🗄️ Gambaran Skema Database (Entity Relationship)
+- `User`: Menyimpan data Pasien, Dokter, dan Apoteker beserta status Refresh Token dan jejak persetujuan privasi.
 
-## Resources
+- `Medicine`: Katalog dan stok obat.
 
-Check out a few resources that may come in handy when working with NestJS:
+- `DoctorRecipe`: Rekam medis resep yang menghubungkan Pasien, Dokter (pembuat resep), dan Apoteker (pengeksekusi).
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+- `RecipeDetail`: Rincian obat dan aturan pakai pada setiap resep.
 
-## Support
+- `DoctorAppointment`: Jadwal temu Pasien dan Dokter.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+(Untuk melihat antarmuka database secara visual, jalankan `npx prisma studio`)
 
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## 📄 Lisensi
+Projek ini didistribusikan di bawah lisensi MIT. Anda bebas untuk menggunakan, mengubah, dan mendistribusikan perangkat lunak ini. Lihat file [LICENSE](LICENSE) untuk informasi lebih lanjut.
