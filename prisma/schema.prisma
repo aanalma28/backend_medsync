@@ -14,8 +14,7 @@ datasource db {
 }
 
 model User {
-  id                     String    @id @default(cuid())
-  user_code              String
+  id                     String    @id @default(cuid())  
   name                   String?
   email                  String    @unique
   password               String
@@ -23,17 +22,49 @@ model User {
   accepted_terms         Boolean   @default(false)
   remember_token         String?
   remember_token_expires DateTime?
+  address                String
+  phone                  String
+  birth_date             DateTime
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
+      
+  patientUser         Patient?          @relation("PatientUser")
+  employeeUser        Employee?         @relation("EmployeeUser")
+}
 
-  // RELASI BALIK (INVERSE RELATIONS) DITAMBAHKAN DI SINI
-  // Wajib memakai label relasi agar Prisma tidak bingung
-  patientRecipes      DoctorRecipe[]     @relation("PatientRecipes")
-  doctorRecipes       DoctorRecipe[]     @relation("DoctorRecipes")
-  pharmacistRecipes   DoctorRecipe[]     @relation("PharmacistRecipes")
+model Departmen {
+  id             String @id @default(cuid())
+  name           String
+  departmen_code String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   
-  patientAppointments DoctorAppoinment[] @relation("PatientAppointments")
-  doctorAppointments  DoctorAppoinment[] @relation("DoctorAppointments")
+  employees Employee[]
+}
+
+model Patient {
+  id                      String   @id @default(cuid())
+  user                    User     @relation("PatientUser", fields: [user_id], references: [id])
+  user_id                 String   @unique
+  medical_record_number   String
+  
+  medicalHistories  MedicalHistory[] @relation("PatientMedicalHistory")
+  patientRecipes    DoctorRecipe[]   @relation("PatientRecipes")
+  patientAppoinments DoctorAppoinment[] @relation("PatientAppoinments")
+}
+
+model Employee {
+  id              String    @id @default(cuid())
+  user            User      @relation("EmployeeUser", fields: [user_id], references: [id])
+  user_id         String    @unique
+  staff_code      String
+  departmen       Departmen @relation(fields: [departmen_id], references: [id])
+  departmen_id    String
+
+  medicalHistories  MedicalHistory[] @relation("DoctorMedicalHistory")
+  doctorRecipes     DoctorRecipe[]   @relation("DoctorRecipes")
+  pharmacistRecipes DoctorRecipe[]   @relation("PharmacistRecipes")
+  doctorPractice    DoctorPractice[] @relation("DoctorPractice")
 }
 
 model Medicine {
@@ -50,28 +81,71 @@ model Medicine {
   recipeDetails RecipeDetail[]
 }
 
+model DoctorPractice {
+  id            String   @id @default(cuid())
+  doctor        Employee @relation("DoctorPractice", fields: [doctor_id], references: [id])
+  doctor_id     String
+  practice_date DateTime
+  start_hour    String
+  end_hour      String
+  capacity      Int
+
+  appoinments DoctorAppoinment[] @relation("DoctorPracticeAppoinments")
+}
+
+model DoctorAppoinment {
+  id            String   @id @default(cuid())
+  practice      DoctorPractice @relation("DoctorPracticeAppoinments", fields: [practice_id], references: [id])
+  practice_id   String
+  patient       Patient    @relation("PatientAppoinments", fields: [patient_id], references: [id])
+  patient_id    String
+  booking_date  DateTime
+  status        String
+  queue_number  Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  patientHistory MedicalHistory? @relation("PatientHistoryAppoinment)
+}
+
+model MedicalHistory {
+  id              String   @id @default(cuid())
+  patient         Patient  @relation("PatientMedicalHistory", fields: [patient_id], references: [id])
+  patient_id      String
+  appoinment      DoctorAppoinment @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id])
+  appoinment_id   String
+  doctor          Employee @relation("DoctorMedicalHistory", fields: [doctor_id], references: [id])
+  doctor_id       String
+  complaint       String
+  diagnosis       String
+  notes           String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  medicalRecipe   DoctorRecipe? @relation("MedicalRecipe")
+}
+
 model DoctorRecipe {
   id                    String   @id @default(cuid())
+  medicalHistory        MedicalHistory @relation("MedicalRecipe", fields: [id_history], references: [id])
+  id_history            String   @unique
   no_trx                String
   recipe_date_exec      DateTime
-  
-  // LABEL RELASI DITAMBAHKAN DI SINI
-  patient               User     @relation("PatientRecipes", fields: [patient_id], references: [id])
+  patient               Patient     @relation("PatientRecipes", fields: [patient_id], references: [id])
   patient_id            String
   
-  doctor                User     @relation("DoctorRecipes", fields: [doctor_id], references: [id])
+  doctor                Employee     @relation("DoctorRecipes", fields: [doctor_id], references: [id])
   doctor_id             String
   
-  pharmacist            User     @relation("PharmacistRecipes", fields: [pharmacist_id], references: [id])
+  pharmacist            Employee     @relation("PharmacistRecipes", fields: [pharmacist_id], references: [id])
   pharmacist_id         String
   
   status                String
   take_med_date         DateTime
   match_medicine_recipe Boolean
   verify_notes          String
-
-  // Relasi balik dari RecipeDetail
-  recipeDetails         RecipeDetail[]
+  
+  recipeDetails         RecipeDetail[]    
 }
 
 model RecipeDetail {
@@ -84,17 +158,4 @@ model RecipeDetail {
   medicine_id String
   
   rules_using String
-}
-
-model DoctorAppoinment {
-  id         String   @id @default(cuid())
-  
-  // LABEL RELASI DITAMBAHKAN DI SINI
-  patient    User     @relation("PatientAppointments", fields: [patient_id], references: [id])
-  patient_id String
-  
-  doctor     User     @relation("DoctorAppointments", fields: [doctor_id], references: [id])
-  doctor_id  String
-  
-  time_meet  DateTime
 }
