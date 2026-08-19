@@ -105,7 +105,7 @@ model DoctorAppoinment {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  patientHistory MedicalHistory? @relation("PatientHistoryAppoinment)
+  patientHistory MedicalHistory? @relation("PatientHistoryAppoinment")
 }
 
 model MedicalHistory {
@@ -113,7 +113,7 @@ model MedicalHistory {
   patient         Patient  @relation("PatientMedicalHistory", fields: [patient_id], references: [id])
   patient_id      String
   appoinment      DoctorAppoinment @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id])
-  appoinment_id   String
+  appoinment_id   String   @unique
   doctor          Employee @relation("DoctorMedicalHistory", fields: [doctor_id], references: [id])
   doctor_id       String
   complaint       String
