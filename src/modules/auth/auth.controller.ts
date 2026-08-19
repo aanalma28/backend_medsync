@@ -25,10 +25,11 @@ import type { Request, Response } from 'express';
  */
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   /**
    * POST /auth/register
+   * Public endpoint — registers a new patient account.
    * Rate limit: 5 requests per 60 seconds
    */
   @Public()
@@ -163,6 +164,7 @@ export class AuthController {
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   async getProfile(@Req() request: Request) {
     const user = (request as any).user;
-    return this.authService.getProfile(user.id);
+    const remembermeToken = request.cookies?.['remember_token'] as string;
+    return this.authService.getProfile(user.id, remembermeToken);
   }
 }

@@ -2,7 +2,7 @@ import {
   IsString,
   IsEmail,
   IsBoolean,
-  IsIn,
+  IsDateString,
   MinLength,
   MaxLength,
   Matches,
@@ -10,20 +10,28 @@ import {
 } from 'class-validator';
 
 export class RegisterDto {
-  @IsIn(['pasien', 'dokter', 'apoteker'], {
-    message: 'Role harus salah satu dari: pasien, dokter, apoteker',
-  })
+  @IsString({ message: 'Role harus berupa string' })
+  @Equals('pasien', { message: 'Role harus bernilai pasien' })
   role: string;
 
-  @IsString({ message: 'Nama harus berupa string' })
-  @MinLength(3, { message: 'Nama minimal 3 karakter' })
-  @MaxLength(100, { message: 'Nama maksimal 100 karakter' })
+  @IsString({ message: 'Nama lengkap harus berupa string' })
+  @MinLength(3, { message: 'Nama lengkap minimal 3 karakter' })
+  @MaxLength(100, { message: 'Nama lengkap maksimal 100 karakter' })
   name: string;
 
-  @IsString({ message: 'Nomor pasien harus berupa string' })
-  @MinLength(3, { message: 'Nomor pasien minimal 3 karakter' })
-  @MaxLength(50, { message: 'Nomor pasien maksimal 50 karakter' })
-  user_code: string;
+  @IsString({ message: 'Nomor handphone harus berupa string' })
+  @Matches(/^(\+62|62|0)8[1-9][0-9]{6,10}$/, {
+    message: 'Format nomor handphone tidak valid (contoh: 08xxxxxxxxxx)',
+  })
+  phone: string;
+
+  @IsDateString({}, { message: 'Format tanggal lahir tidak valid (gunakan YYYY-MM-DD)' })
+  birth_date: string;
+
+  @IsString({ message: 'Alamat harus berupa string' })
+  @MinLength(5, { message: 'Alamat minimal 5 karakter' })
+  @MaxLength(500, { message: 'Alamat maksimal 500 karakter' })
+  address: string;
 
   @IsEmail({}, { message: 'Format email tidak valid' })
   @MaxLength(100, { message: 'Email maksimal 100 karakter' })
@@ -40,12 +48,11 @@ export class RegisterDto {
 
   @IsString({ message: 'Konfirmasi password harus berupa string' })
   @MinLength(8, { message: 'Konfirmasi password minimal 8 karakter' })
-  @MaxLength(128, { message: 'Konfirmasi password maksimal 128 karakter' })
   confirm_password: string;
 
-  @IsBoolean({ message: 'Accepted terms harus berupa boolean' })
+  @IsBoolean({ message: 'Persetujuan penggunaan harus berupa boolean' })
   @Equals(true, {
-    message: 'Anda harus menyetujui syarat dan ketentuan',
+    message: 'Anda harus menyetujui syarat dan ketentuan penggunaan',
   })
   accepted_terms: boolean;
 }

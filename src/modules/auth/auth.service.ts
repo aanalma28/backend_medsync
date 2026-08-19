@@ -21,12 +21,12 @@ export class AuthService {
   ) { }
 
   /**
-   * Register a new user.
+   * Register a new patient.
    *
-   * 1. Check confirm_password matches password
-   * 2. Check email uniqueness
-   * 3. Hash password with bcrypt (10 rounds)
-   * 4. Create user in database
+   * 1. Check email uniqueness
+   * 2. Hash password with bcrypt (10 rounds)
+   * 3. Create User + Patient records in a single transaction
+   * 4. Auto-generate medical_record_number
    */
   async register(registerDto: RegisterDto) {
     // Validate confirm_password
@@ -45,20 +45,51 @@ export class AuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    // Create user
-    const user = await this.usersService.create({
-      user_code: registerDto.user_code,
-      name: registerDto.name,
-      email: registerDto.email,
-      password: hashedPassword,
-      role: registerDto.role,
-      accepted_terms: registerDto.accepted_terms,
+    // Auto-generate medical record number: MRN-YYYYMMDD-XXXXX
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const randomSuffix = Math.floor(10000 + Math.random() * 90000).toString();
+    const medicalRecordNumber = `MRN-${dateStr}-${randomSuffix}`;
+
+    // Create User + Patient in a transaction
+    const result = await (this.prisma as any).$transaction(async (tx: any) => {
+      const user = await tx.user.create({
+        data: {
+          name: registerDto.name,
+          email: registerDto.email,
+          password: hashedPassword,
+          role: registerDto.role,
+          accepted_terms: registerDto.accepted_terms,
+          phone: registerDto.phone,
+          address: registerDto.address,
+          birth_date: new Date(registerDto.birth_date),
+        },
+      });
+
+      const patient = await tx.patient.create({
+        data: {
+          user_id: user.id,
+          medical_record_number: medicalRecordNumber,
+        },
+      });
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        address: user.address,
+        birth_date: user.birth_date,
+        medical_record_number: patient.medical_record_number,
+        createdAt: user.createdAt,
+      };
     });
 
     return {
       statusCode: 201,
-      message: 'Registrasi berhasil',
-      data: user,
+      message: 'Registrasi pasien berhasil',
+      data: result,
     };
   }
 
@@ -130,7 +161,6 @@ export class AuthService {
       csrfToken,
       user: {
         id: user.id,
-        user_code: user.user_code,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -164,7 +194,6 @@ export class AuthService {
       },
       select: {
         id: true,
-        user_code: true,
         name: true,
         email: true,
         role: true,
@@ -206,10 +235,35 @@ export class AuthService {
   /**
    * Get current user profile from JWT payload.
    */
-  async getProfile(userId: string) {
-    const user = await this.usersService.findById(userId);
+  async getProfile(userId: string, rememberTokenFromCookie: string) {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(rememberTokenFromCookie)
+      .digest('hex');
+
+    const user = await (this.prisma as any).user.findFirst({
+      where: {
+        remember_token: hashedToken,
+        remember_token_expires: {
+          gt: new Date(),
+        },
+        id: userId
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        employee: {
+          select: {
+            staff_code: true
+          }
+        }
+      },
+    });
+
     if (!user) {
-      throw new UnauthorizedException('User tidak ditemukan');
+      throw new UnauthorizedException('Silakan login ulang');
     }
 
     return {

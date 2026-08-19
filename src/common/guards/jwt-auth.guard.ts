@@ -86,7 +86,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       },
       select: {
         id: true,
-        user_code: true,
         name: true,
         email: true,
         role: true,

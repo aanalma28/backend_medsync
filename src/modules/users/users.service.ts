@@ -34,7 +34,6 @@ export class UsersService {
       where: { id },
       select: {
         id: true,
-        user_code: true,
         name: true,
         email: true,
         role: true,
@@ -48,7 +47,6 @@ export class UsersService {
    * Create a new user with hashed password.
    */
   async create(data: {
-    user_code: string;
     name: string;
     email: string;
     password: string;
@@ -59,7 +57,6 @@ export class UsersService {
       data,
       select: {
         id: true,
-        user_code: true,
         name: true,
         email: true,
         role: true,
