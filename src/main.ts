@@ -20,7 +20,7 @@ async function bootstrap() {
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
     credentials: true, // Allow cookies cross-origin
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With'],
   });
 
   // ===== Global Validation Pipe (input limiting & type safety) =====

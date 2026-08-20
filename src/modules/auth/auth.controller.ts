@@ -18,14 +18,14 @@ import type { Request, Response } from 'express';
 /**
  * Auth Controller — handles registration, login, logout, profile, and token refresh.
  *
- * Cookie-based JWT authentication:
- * - access_token: HttpOnly, Secure, SameSite=Lax, 15min
- * - remember_token: HttpOnly, Secure, SameSite=Lax, 30 days
- * - csrf_token: NOT HttpOnly (JS readable), SameSite=Lax
+ * Hybrid authentication model:
+ * - JWT (15min): returned in JSON response body → client sends as Authorization: Bearer <token>
+ * - remember_token (30 days): HttpOnly, Secure, SameSite=Lax cookie → used for silent refresh
+ * - csrf_token: non-HttpOnly cookie (JS readable) for double-submit CSRF pattern
  */
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   /**
    * POST /auth/register
@@ -44,7 +44,10 @@ export class AuthController {
    * POST /auth/login
    * Rate limit: 5 requests per 60 seconds (brute force protection)
    *
-   * Sets JWT in HttpOnly cookie and optionally remember_token.
+   * Response:
+   * - JSON body: { statusCode, message, data: { accessToken, user } }
+   * - Cookie: remember_token (HttpOnly, Secure, SameSite=Lax, 30 days) — only if remember_me is true
+   * - Cookie: csrf_token (non-HttpOnly, SameSite=Lax, 15 min)
    */
   @Public()
   @Post('login')
@@ -56,21 +59,12 @@ export class AuthController {
   ) {
     const result = await this.authService.login(loginDto);
 
-    // Set access_token cookie (HttpOnly, 15 minutes)
-    response.cookie('access_token', result.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000, // 15 minutes
-      path: '/',
-    });
-
-    // Set CSRF token cookie (NOT HttpOnly — JS must read it)
+    // Set CSRF token cookie (NOT HttpOnly — JS must read it for double-submit pattern)
     response.cookie('csrf_token', result.csrfToken, {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      maxAge: 15 * 60 * 1000, // 15 minutes (aligned with JWT lifespan)
       path: '/',
     });
 
@@ -85,16 +79,20 @@ export class AuthController {
       });
     }
 
+    // JWT is returned in the JSON response body — NOT as a cookie
     return {
       statusCode: 200,
       message: 'Login berhasil',
-      data: result.user,
+      data: {
+        accessToken: result.accessToken,
+        user: result.user,
+      },
     };
   }
 
   /**
    * POST /auth/logout
-   * Requires authentication. Clears all auth cookies and DB remember_token.
+   * Requires authentication (JWT Bearer). Clears DB remember_token and auth cookies.
    */
   @Post('logout')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
@@ -106,8 +104,7 @@ export class AuthController {
     const user = (request as any).user;
     const result = await this.authService.logout(user.id);
 
-    // Clear all auth cookies
-    response.clearCookie('access_token', { path: '/' });
+    // Clear remember_token and csrf_token cookies
     response.clearCookie('remember_token', { path: '/' });
     response.clearCookie('csrf_token', { path: '/' });
 
@@ -116,8 +113,16 @@ export class AuthController {
 
   /**
    * POST /auth/refresh
-   * Public endpoint — uses remember_token cookie to issue new JWT.
+   * Public endpoint — uses remember_token HttpOnly cookie to issue a new JWT.
    * Rate limit: 10 requests per 60 seconds
+   *
+   * On success:
+   * - JSON body: { statusCode, message, data: { accessToken, user } }
+   * - Cookie: csrf_token (refreshed, 15 min)
+   *
+   * On failure (401):
+   * - Clears remember_token cookie
+   * - Nullifies remember_token fields in DB
    */
   @Public()
   @Post('refresh')
@@ -128,43 +133,46 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const rememberToken = request.cookies?.['remember_token'] as string;
-    const result = await this.authService.refreshToken(rememberToken);
 
-    // Set new access_token cookie
-    response.cookie('access_token', result.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000, // 15 minutes
-      path: '/',
-    });
+    try {
+      const result = await this.authService.refreshToken(rememberToken);
 
-    // Set new CSRF token cookie
-    response.cookie('csrf_token', result.csrfToken, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000, // 15 minutes
-      path: '/',
-    });
+      // Set new CSRF token cookie
+      response.cookie('csrf_token', result.csrfToken, {
+        httpOnly: false,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 15 * 60 * 1000, // 15 minutes
+        path: '/',
+      });
 
-    return {
-      statusCode: 200,
-      message: 'Token berhasil diperbarui',
-      data: result.user,
-    };
+      // JWT is returned in the JSON response body
+      return {
+        statusCode: 200,
+        message: 'Token berhasil diperbarui',
+        data: {
+          accessToken: result.accessToken,
+          user: result.user,
+        },
+      };
+    } catch (error) {
+      // On any auth failure, clear the remember_token cookie
+      response.clearCookie('remember_token', { path: '/' });
+      response.clearCookie('csrf_token', { path: '/' });
+      throw error;
+    }
   }
 
   /**
    * GET /auth/me
-   * Requires authentication. Returns current user profile.
+   * Requires authentication (JWT Bearer). Returns current user profile.
+   * Includes staff_code for non-patient roles via LEFT JOIN with Employee.
    * Rate limit: 30 requests per 60 seconds
    */
   @Get('me')
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   async getProfile(@Req() request: Request) {
     const user = (request as any).user;
-    const remembermeToken = request.cookies?.['remember_token'] as string;
-    return this.authService.getProfile(user.id, remembermeToken);
+    return this.authService.getProfile(user.id);
   }
 }

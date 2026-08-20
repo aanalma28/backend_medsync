@@ -1,31 +1,31 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy } from 'passport-jwt';
+import { Strategy, ExtractJwt } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { Request } from 'express';
 
 /**
- * JWT Strategy — extracts JWT from HTTP-only cookie instead of Authorization header.
- * This is more secure against XSS token theft.
+ * JWT Strategy — extracts JWT from the Authorization: Bearer <token> header.
+ *
+ * The frontend is responsible for storing the JWT (in memory/state) and
+ * attaching it as `Authorization: Bearer <token>` on every protected request.
+ * The remember_me opaque token remains in an HttpOnly cookie for silent refresh.
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly prisma: PrismaService) {
     super({
-      jwtFromRequest: (req: Request) => {
-        if (!req || !req.cookies) return null;
-        return req.cookies['access_token'] as string | null;
-      },
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET || 'medsync-jwt-secret-change-in-production',
+      secretOrKey:
+        process.env.JWT_SECRET || 'medsync-jwt-secret-change-in-production',
     });
   }
 
   /**
-   * Called after JWT is verified. Payload contains { sub: userId, email, role }.
+   * Called after JWT is verified. Payload contains { sub: userId, role }.
    * Returns the user object that will be attached to request.user.
    */
-  async validate(payload: { sub: string; email: string; role: string }) {
+  async validate(payload: { sub: string; role: string }) {
     const user = await (this.prisma as any).user.findUnique({
       where: { id: payload.sub },
       select: {

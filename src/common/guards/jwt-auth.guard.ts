@@ -6,27 +6,22 @@ import {
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
-import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from '../../prisma/prisma.service.js';
-import * as crypto from 'crypto';
-import type { Request, Response } from 'express';
 
 /**
  * Global JWT Authentication Guard.
  *
  * Flow:
  * 1. Check if route is @Public() → skip auth
- * 2. Try standard JWT validation from cookie
- * 3. If JWT expired, check remember_token cookie → auto-refresh
- * 4. If no valid tokens → 401 Unauthorized
+ * 2. Validate JWT from Authorization: Bearer <token> header via Passport
+ * 3. If JWT is missing, expired, or invalid → 401 Unauthorized
+ *
+ * The client is responsible for calling POST /auth/refresh with the
+ * remember_me HttpOnly cookie to obtain a new JWT when it expires.
+ * This separation keeps the guard stateless and the auth flow explicit.
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly jwtService: JwtService,
-    private readonly prisma: PrismaService,
-  ) {
+  constructor(private readonly reflector: Reflector) {
     super();
   }
 
@@ -41,83 +36,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return true;
     }
 
-    // 2. Try standard JWT validation
+    // 2. Validate JWT via Passport JwtStrategy
     try {
       const result = await (super.canActivate(context) as Promise<boolean>);
       return result;
     } catch {
-      // JWT failed (expired or missing), try remember_me refresh
-      const request = context.switchToHttp().getRequest<Request>();
-      const response = context.switchToHttp().getResponse<Response>();
-
-      return this.tryRememberMeRefresh(request, response);
-    }
-  }
-
-  /**
-   * Attempt to auto-refresh the JWT using the remember_me token from cookies.
-   * If the remember_token in the cookie matches the hashed token in DB
-   * and hasn't expired (30 days), generate a new 15-minute JWT.
-   */
-  private async tryRememberMeRefresh(
-    request: Request,
-    response: Response,
-  ): Promise<boolean> {
-    const rememberToken = request.cookies?.['remember_token'] as
-      | string
-      | undefined;
-    if (!rememberToken) {
-      throw new UnauthorizedException('Token tidak valid atau sudah expired');
-    }
-
-    // Hash the cookie token to compare with DB
-    const hashedToken = crypto
-      .createHash('sha256')
-      .update(rememberToken)
-      .digest('hex');
-
-    // Find user with matching remember_token that hasn't expired
-    const user = await (this.prisma as any).user.findFirst({
-      where: {
-        remember_token: hashedToken,
-        remember_token_expires: {
-          gt: new Date(),
-        },
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        createdAt: true,
-      },
-    });
-
-    if (!user) {
-      // Token expired or invalid — clear cookies
-      response.clearCookie('access_token');
-      response.clearCookie('remember_token');
       throw new UnauthorizedException(
-        'Remember me token expired, silakan login ulang',
+        'Token tidak valid atau sudah expired. Silakan refresh atau login ulang.',
       );
     }
-
-    // Generate new JWT (15 minutes)
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const newAccessToken = this.jwtService.sign(payload);
-
-    // Set new access_token cookie
-    response.cookie('access_token', newAccessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000, // 15 minutes
-      path: '/',
-    });
-
-    // Attach user to request
-    (request as any).user = user;
-
-    return true;
   }
 }
