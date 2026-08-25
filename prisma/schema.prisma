@@ -13,12 +13,30 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  SUPERADMIN
+  MASTERADMIN
+  REGISTER_ADMIN
+  DOCTOR
+  PHARMACIST
+  NURSE
+  PATIENT
+}
+
+enum Category {
+  DRUG            // Obat-obatan resep/bebas
+  CONSUMABLE      // Alat habis pakai (infus, jarum, dll)
+  SUPPLEMENT      // Obat-obatan tambahan (vitamin, dll)
+  MEDICAL_DEVICE  // Alat medis (stetoskop, tensi, dll)
+  OTHER           // Lainnya
+}
+
 model User {
   id                     String    @id @default(cuid())  
   name                   String?
   email                  String    @unique
   password               String
-  role                   String
+  role                   Role      @default(PATIENT)
   accepted_terms         Boolean   @default(false)
   remember_token         String?
   remember_token_expires DateTime?
@@ -30,12 +48,14 @@ model User {
       
   patientUser         Patient?          @relation("PatientUser")
   employeeUser        Employee?         @relation("EmployeeUser")
+  inventoryUser       InventoryLogs[]   @relation("UserWriter")
 }
 
 model Departmen {
   id             String @id @default(cuid())
   name           String
   departmen_code String
+  address        String  
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   
@@ -67,18 +87,41 @@ model Employee {
   doctorPractice    DoctorPractice[] @relation("DoctorPractice")
 }
 
-model Medicine {
+model Products {
   id          String   @id @default(cuid())
+  code        String   @unique
   name        String
-  category    String
-  alternate   String
+  category    Category @default(DRUG)
+  unit        String
+  stock       Int
+  min_stock   Int
+  buy_price   Float
+  sell_price  Float  
   description String
-  stock       String
-  price       String
-  expired     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relasi balik dari RecipeDetail
   recipeDetails RecipeDetail[]
+
+  // Relasi ke InventoryLogs
+  inventoryLogs InventoryLogs[] @relation("ProductInventoryLogs")
+}
+
+model InventoryLogs {
+  id                 String   @id @default(cuid())
+  product            Products @relation("ProductInventoryLogs", fields: [product_id], references: [id])
+  product_id         String
+  type               String
+  quantity           Int
+  buy_price          Float
+  exp_date           DateTime?
+  supplierName       String?  
+  reference_number   String?
+  user               User    @relation("UserWriter", fields: [user_id], references: [id])
+  user_id            String
+  notes              String?
+  createdAt          DateTime @default(now())
 }
 
 model DoctorPractice {
@@ -142,7 +185,7 @@ model DoctorRecipe {
   
   status                String
   take_med_date         DateTime
-  match_medicine_recipe Boolean
+  match_product_recipe Boolean
   verify_notes          String
   
   recipeDetails         RecipeDetail[]    
@@ -154,8 +197,8 @@ model RecipeDetail {
   recipe      DoctorRecipe @relation(fields: [recipe_id], references: [id])
   recipe_id   String
   
-  medicine    Medicine     @relation(fields: [medicine_id], references: [id])
-  medicine_id String
+  product    Products     @relation(fields: [product_id], references: [id])
+  product_id String
   
   rules_using String
 }
