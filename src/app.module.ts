@@ -6,6 +6,7 @@ import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
+import { DepartmenModule } from './modules/departmen/departmen.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { CsrfGuard } from './common/guards/csrf.guard.js';
@@ -22,6 +23,7 @@ import { CsrfGuard } from './common/guards/csrf.guard.js';
     PrismaModule,
     AuthModule,
     UsersModule,
+    DepartmenModule,
   ],
   controllers: [AppController],
   providers: [
