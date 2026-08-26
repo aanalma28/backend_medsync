@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { generateMedicalRecordNumber } from '../../common/utils/code-generator.util.js';
 
 /**
  * Authentication Service — handles registration, login, token refresh, logout, and profile.
@@ -76,11 +77,8 @@ export class AuthService {
     // Hash password
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    // Auto-generate medical record number: MRN-YYYYMMDD-XXXXX
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-    const randomSuffix = Math.floor(10000 + Math.random() * 90000).toString();
-    const medicalRecordNumber = `MRN-${dateStr}-${randomSuffix}`;
+    // Auto-generate medical record number: PTN-XXXXX
+    const medicalRecordNumber = generateMedicalRecordNumber();
 
     // Create User + Patient in a transaction
     const result = await (this.prisma as any).$transaction(async (tx: any) => {

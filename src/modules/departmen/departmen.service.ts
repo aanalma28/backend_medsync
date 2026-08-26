@@ -11,7 +11,7 @@ import { QueryDepartmenDto } from './dto/query-departmen.dto.js';
 
 @Injectable()
 export class DepartmenService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   // Helper cast for Prisma client access
   private get db() {
@@ -91,6 +91,7 @@ export class DepartmenService {
       name: item.name,
       departmen_code: item.departmen_code,
       address: item.address,
+      city: item.city,
       employee_count: item._count?.employees ?? 0,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
