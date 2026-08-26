@@ -2,17 +2,11 @@ import {
   IsString,
   IsEmail,
   IsBoolean,
-  IsIn,
   MinLength,
   MaxLength,
 } from 'class-validator';
 
 export class LoginDto {
-  @IsIn(['pasien', 'dokter', 'apoteker'], {
-    message: 'Role harus salah satu dari: pasien, dokter, apoteker',
-  })
-  role: string;
-
   @IsEmail({}, { message: 'Format email tidak valid' })
   @MaxLength(100, { message: 'Email maksimal 100 karakter' })
   email: string;

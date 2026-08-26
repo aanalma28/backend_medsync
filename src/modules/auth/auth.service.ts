@@ -139,11 +139,8 @@ export class AuthService {
    *   - Set csrfToken as non-HttpOnly cookie
    */
   async login(loginDto: LoginDto) {
-    // Find user by email and role
-    const user = await this.usersService.findByEmail(
-      loginDto.email,
-      loginDto.role,
-    );
+    // Find user by email
+    const user = await this.usersService.findByEmail(loginDto.email);
 
     if (!user) {
       throw new UnauthorizedException('Email atau password salah');
