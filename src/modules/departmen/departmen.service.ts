@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { CreateDepartmenDto } from './dto/create-departmen.dto.js';
@@ -11,7 +10,7 @@ import { QueryDepartmenDto } from './dto/query-departmen.dto.js';
 
 @Injectable()
 export class DepartmenService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   // Helper cast for Prisma client access
   private get db() {
@@ -42,6 +41,8 @@ export class DepartmenService {
         name: createDto.name,
         departmen_code: createDto.departmen_code,
         address: createDto.address,
+        city: createDto.city,
+        is_active: createDto.is_active ?? true,
       },
     });
 
@@ -53,7 +54,7 @@ export class DepartmenService {
   }
 
   /**
-   * Find all departments with search and pagination support.
+   * Find all departments with search, is_active filter, and pagination support.
    */
   async findAll(query: QueryDepartmenDto) {
     const page = query.page || 1;
@@ -62,12 +63,17 @@ export class DepartmenService {
 
     const where: any = {};
 
+    if (query.is_active !== undefined && query.is_active !== '') {
+      where.is_active = query.is_active === 'true';
+    }
+
     if (query.search && query.search.trim() !== '') {
       const search = query.search.trim();
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { departmen_code: { contains: search, mode: 'insensitive' } },
         { address: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -92,6 +98,7 @@ export class DepartmenService {
       departmen_code: item.departmen_code,
       address: item.address,
       city: item.city,
+      is_active: item.is_active,
       employee_count: item._count?.employees ?? 0,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
@@ -149,6 +156,8 @@ export class DepartmenService {
         name: departmen.name,
         departmen_code: departmen.departmen_code,
         address: departmen.address,
+        city: departmen.city,
+        is_active: departmen.is_active,
         employee_count: departmen._count?.employees ?? 0,
         employees: departmen.employees,
         createdAt: departmen.createdAt,
@@ -196,30 +205,21 @@ export class DepartmenService {
   }
 
   /**
-   * Remove department by ID.
+   * Remove (soft delete / deactivate) department by ID.
    */
   async remove(id: string) {
     // Check existence
     await this.findOne(id);
 
-    // Check if any employee belongs to this department
-    const employeeCount = await this.db.employee.count({
-      where: { departmen_id: id },
-    });
-
-    if (employeeCount > 0) {
-      throw new BadRequestException(
-        `Departmen tidak dapat dihapus karena masih terdapat ${employeeCount} pegawai yang terdaftar pada departmen ini`,
-      );
-    }
-
-    await this.db.departmen.delete({
+    const updated = await this.db.departmen.update({
       where: { id },
+      data: { is_active: false },
     });
 
     return {
       statusCode: 200,
-      message: 'Departmen berhasil dihapus',
+      message: 'Departmen berhasil dinonaktifkan',
+      data: updated,
     };
   }
 }

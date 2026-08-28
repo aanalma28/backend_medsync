@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, MinLength, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, MaxLength, IsBoolean, IsOptional } from 'class-validator';
 
 export class CreateDepartmenDto {
   @IsString({ message: 'Nama departmen harus berupa string' })
@@ -18,4 +18,12 @@ export class CreateDepartmenDto {
   @MinLength(3, { message: 'Alamat departmen minimal 3 karakter' })
   @MaxLength(500, { message: 'Alamat departmen maksimal 500 karakter' })
   address: string;
+
+  @IsString({ message: 'Kota departmen harus berupa string' })
+  @IsNotEmpty({ message: 'Kota departmen tidak boleh kosong' })
+  city: string;
+
+  @IsOptional()
+  @IsBoolean({ message: 'is_active harus berupa boolean' })
+  is_active?: boolean;
 }

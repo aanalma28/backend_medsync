@@ -7,6 +7,10 @@ export class QueryDepartmenDto {
   search?: string;
 
   @IsOptional()
+  @IsString()
+  is_active?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'Page harus berupa angka bulat' })
   @Min(1, { message: 'Page minimal bernilai 1' })

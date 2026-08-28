@@ -182,6 +182,35 @@ export class AuthService {
       );
     }
 
+    if (!user.is_active) {
+      throw new UnauthorizedException(
+        'Akun Anda tidak aktif. Silahkan hubungi Admin untuk informasi lebih lanjut.'
+      );
+    }
+
+    let user_code: string | null = null;
+    if (user.role == "PATIENT") {
+      const patientData = await this.prisma.patient.findUnique({
+        where: {
+          user_id: user.id,
+        },
+        select: {
+          medical_record_number: true,
+        },
+      });
+      user_code = patientData?.medical_record_number || null;
+    } else {
+      const employeeData = await this.prisma.employee.findUnique({
+        where: {
+          user_id: user.id,
+        },
+        select: {
+          staff_code: true,
+        },
+      });
+      user_code = employeeData?.staff_code || null;
+    }
+
     return {
       accessToken,
       rememberToken,
@@ -191,6 +220,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
+        user_code: user_code,
       },
     };
   }
@@ -326,12 +356,14 @@ export class AuthService {
 
     // Flatten nested relations for a clean API response
     const { employeeUser, patientUser, ...userData } = user;
+    const userCode = employeeUser?.staff_code || patientUser?.medical_record_number || user.id;
 
     return {
       statusCode: 200,
       message: 'Profil berhasil diambil',
       data: {
         ...userData,
+        user_code: userCode,
         // Include staff_code for non-patient roles (dokter, apoteker, etc.)
         ...(employeeUser ? { staff_code: employeeUser.staff_code } : {}),
         // Include medical_record_number for patient role
