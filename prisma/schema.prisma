@@ -36,6 +36,13 @@ enum SlotStatus{
   CLOSED  
 }
 
+enum RecipeStatus{
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
 enum AppoinmentStatus{
   PENDING
   CONFIRMED
@@ -207,13 +214,16 @@ model DoctorRecipe {
   doctor                Employee     @relation("DoctorRecipes", fields: [doctor_id], references: [id])
   doctor_id             String
   
-  pharmacist            Employee     @relation("PharmacistRecipes", fields: [pharmacist_id], references: [id])
-  pharmacist_id         String
+  pharmacist            Employee?    @relation("PharmacistRecipes", fields: [pharmacist_id], references: [id])
+  pharmacist_id         String?
   
-  status                String
-  take_med_date         DateTime
-  match_product_recipe Boolean
-  verify_notes          String
+  status                RecipeStatus       @default(PENDING)
+  take_med_date         DateTime?
+  match_product_recipe Boolean?     @default(true)
+  verify_notes          String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
   
   recipeDetails         RecipeDetail[]    
 }

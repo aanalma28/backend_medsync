@@ -8,6 +8,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { DepartmenModule } from './modules/departmen/departmen.module.js';
 import { DoctorPracticeModule } from './modules/doctor-practice/doctor-practice.module.js';
+import { PatientDashboardModule } from './modules/patient-dashboard/patient-dashboard.module.js';
+import { ProductsModule } from './modules/products/products.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { CsrfGuard } from './common/guards/csrf.guard.js';
@@ -26,6 +28,8 @@ import { CsrfGuard } from './common/guards/csrf.guard.js';
     UsersModule,
     DepartmenModule,
     DoctorPracticeModule,
+    PatientDashboardModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [
