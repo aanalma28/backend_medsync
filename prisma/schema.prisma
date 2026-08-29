@@ -31,6 +31,18 @@ enum Category {
   OTHER           // Lainnya
 }
 
+enum SlotStatus{
+  OPEN
+  CLOSED  
+}
+
+enum AppoinmentStatus{
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED  
+}
+
 model User {
   id                     String    @id @default(cuid())  
   name                   String?
@@ -131,25 +143,37 @@ model DoctorPractice {
   id            String   @id @default(cuid())
   doctor        Employee @relation("DoctorPractice", fields: [doctor_id], references: [id])
   doctor_id     String
-  practice_date DateTime
+  practice_date DateTime    
+
+  slotsPractice SlotPractice[] @relation("DoctorPracticeSlots")  
+}
+
+model SlotPractice {
+  id            String   @id @default(cuid())
+  practice      DoctorPractice @relation("DoctorPracticeSlots", fields: [practice_id], references: [id])
+  practice_id   String
+  name          String 
   start_hour    String
   end_hour      String
-  capacity      Int
+  status_slot   SlotStatus @default(OPEN)
+  is_active     Boolean @default(true)
+  max_patient   Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  appoinments DoctorAppoinment[] @relation("DoctorPracticeAppoinments")
+  appoinments   DoctorAppoinment[] @relation("DoctorPracticeSlots")
 }
 
 model DoctorAppoinment {
-  id            String   @id @default(cuid())
-  practice      DoctorPractice @relation("DoctorPracticeAppoinments", fields: [practice_id], references: [id])
-  practice_id   String
-  patient       Patient    @relation("PatientAppoinments", fields: [patient_id], references: [id])
-  patient_id    String
-  booking_date  DateTime
-  status        String
-  queue_number  Int
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                        String   @id @default(cuid())
+  slotPractice              SlotPractice @relation("DoctorPracticeSlots", fields: [slot_practice_id], references: [id])
+  slot_practice_id          String
+  patient                   Patient    @relation("PatientAppoinments", fields: [patient_id], references: [id])
+  patient_id                String
+  status                    AppoinmentStatus @default(PENDING)
+  queue_number              Int
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
 
   patientHistory MedicalHistory? @relation("PatientHistoryAppoinment")
 }
