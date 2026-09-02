@@ -11,6 +11,8 @@ import { UpdateProductDto } from './dto/update-product.dto.js';
 import { QueryProductDto } from './dto/query-product.dto.js';
 import { RestockProductDto } from './dto/restock-product.dto.js';
 import { DispensePrescriptionDto } from './dto/dispense-prescription.dto.js';
+import { QueryPrescriptionDto } from './dto/query-prescription.dto.js';
+import { CancelPrescriptionDto } from './dto/cancel-prescription.dto.js';
 import { Category } from '../../../generated/prisma/enums.js';
 
 @Injectable()
@@ -420,15 +422,287 @@ export class ProductsService {
   // ─────────────────────────────────────────────
 
   /**
-   * Fetch pending doctor prescriptions waiting to be dispensed by Apoteker.
+   * Fetch doctor prescriptions for the same hospital as the logged-in Pharmacist.
+   * Supports pagination (page & limit), status filtering, and search.
    */
-  async findPendingPrescriptions() {
-    const recipes = await this.db.doctorRecipe.findMany({
-      where: {
-        status: { in: ['PENDING', 'MENUNGGU'] },
+  async findPrescriptionsByHospital(userId: string, query?: QueryPrescriptionDto) {
+    // Resolve Pharmacist's hospital_id
+    let hospitalId: string | null = null;
+    let pharmacistEmployee: any = null;
+
+    if (userId) {
+      pharmacistEmployee = await this.db.employee.findUnique({
+        where: { user_id: userId },
+        include: {
+          departmen: {
+            include: {
+              hospital: true,
+            },
+          },
+        },
+      });
+      hospitalId = pharmacistEmployee?.departmen?.hospital_id || null;
+    }
+
+    if (!hospitalId && query?.hospital_id) {
+      hospitalId = query.hospital_id;
+    }
+
+    const page = Math.max(1, parseInt(query?.page || '1', 10));
+    const limit = Math.max(1, parseInt(query?.limit || '20', 10));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+
+    // Hospital Isolation: match doctor's hospital with pharmacist's hospital
+    if (hospitalId) {
+      where.doctor = {
+        departmen: {
+          hospital_id: hospitalId,
+        },
+      };
+    }
+
+    // Status filter
+    if (
+      query?.status &&
+      query.status.trim() !== '' &&
+      query.status.trim().toUpperCase() !== 'ALL'
+    ) {
+      where.status = query.status.trim().toUpperCase();
+    }
+
+    // Search filter (patient name, RM number, transaction number, doctor name, product name)
+    if (query?.search && query.search.trim() !== '') {
+      const search = query.search.trim();
+      where.OR = [
+        { no_trx: { contains: search, mode: 'insensitive' } },
+        { patient: { medical_record_number: { contains: search, mode: 'insensitive' } } },
+        { patient: { user: { name: { contains: search, mode: 'insensitive' } } } },
+        { doctor: { user: { name: { contains: search, mode: 'insensitive' } } } },
+        {
+          recipeDetails: {
+            some: {
+              product: {
+                name: { contains: search, mode: 'insensitive' },
+              },
+            },
+          },
+        },
+      ];
+    }
+
+    const [total, recipes] = await Promise.all([
+      this.db.doctorRecipe.count({ where }),
+      this.db.doctorRecipe.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          patient: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  birth_date: true,
+                },
+              },
+            },
+          },
+          doctor: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+              departmen: {
+                include: {
+                  hospital: {
+                    select: {
+                      id: true,
+                      name: true,
+                      hospital_code: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          pharmacist: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+          },
+          recipeDetails: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  category: true,
+                  unit: true,
+                  stock: true,
+                  min_stock: true,
+                  sell_price: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const formattedData = recipes.map((recipe: any) => {
+      let isAllStockAvailable = true;
+
+      const items = recipe.recipeDetails.map((detail: any) => {
+        const requiredQty = 1;
+        const stock = detail.product?.stock ?? 0;
+        const hasEnoughStock = stock >= requiredQty;
+        if (!hasEnoughStock) {
+          isAllStockAvailable = false;
+        }
+
+        return {
+          id: detail.id,
+          recipe_id: detail.recipe_id,
+          product_id: detail.product?.id || detail.product_id,
+          product_name: detail.product?.name || 'Obat',
+          product_code: detail.product?.code || '',
+          product_stock: stock,
+          rules_using: detail.rules_using,
+          required_quantity: requiredQty,
+          has_enough_stock: hasEnoughStock,
+          detail_id: detail.id,
+          product: detail.product
+            ? {
+                id: detail.product.id,
+                code: detail.product.code,
+                name: detail.product.name,
+                category: detail.product.category,
+                unit: detail.product.unit,
+                current_stock: stock,
+                sell_price: detail.product.sell_price,
+              }
+            : null,
+        };
+      });
+
+      const doctorHospital = recipe.doctor?.departmen?.hospital;
+      const patientName = recipe.patient?.user?.name || '';
+      const patientPhone = recipe.patient?.user?.phone || '';
+      const mrn = recipe.patient?.medical_record_number || '';
+      const doctorName = recipe.doctor?.user?.name || '';
+
+      return {
+        id: recipe.id,
+        no_trx: recipe.no_trx,
+        recipe_date: recipe.recipe_date_exec || recipe.createdAt,
+        recipe_date_exec: recipe.recipe_date_exec,
+        status: recipe.status,
+        patient_name: patientName,
+        medical_record_number: mrn,
+        patient_phone: patientPhone,
+        doctor_name: doctorName,
+        take_med_date: recipe.take_med_date,
+        match_product_recipe: recipe.match_product_recipe,
+        verify_notes: recipe.verify_notes,
+        createdAt: recipe.createdAt,
+        updatedAt: recipe.updatedAt,
+        hospital: doctorHospital
+          ? {
+              id: doctorHospital.id,
+              name: doctorHospital.name,
+              hospital_code: doctorHospital.hospital_code,
+            }
+          : null,
+        patient: {
+          id: recipe.patient?.id,
+          medical_record_number: mrn,
+          name: patientName,
+          email: recipe.patient?.user?.email,
+          phone: patientPhone,
+          birth_date: recipe.patient?.user?.birth_date,
+        },
+        doctor: {
+          id: recipe.doctor?.id,
+          name: doctorName,
+          staff_code: recipe.doctor?.staff_code,
+          department_name: recipe.doctor?.departmen?.name,
+        },
+        pharmacist: recipe.pharmacist
+          ? {
+              id: recipe.pharmacist.id,
+              name: recipe.pharmacist.user?.name,
+              staff_code: recipe.pharmacist.staff_code,
+            }
+          : null,
+        is_ready_to_dispense: isAllStockAvailable,
+        items,
+      };
+    });
+
+    const pharmacistHospital = pharmacistEmployee?.departmen?.hospital;
+
+    return {
+      statusCode: 200,
+      message: 'Berhasil mengambil daftar resep obat',
+      data: formattedData,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
       },
-      orderBy: { recipe_date_exec: 'asc' },
+      pharmacist_hospital: pharmacistHospital
+        ? {
+            id: pharmacistHospital.id,
+            name: pharmacistHospital.name,
+            hospital_code: pharmacistHospital.hospital_code,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Fetch pending doctor prescriptions waiting to be dispensed by Apoteker (matched by hospital).
+   */
+  async findPendingPrescriptions(userId?: string) {
+    return this.findPrescriptionsByHospital(userId || '', { status: 'PENDING' });
+  }
+
+  /**
+   * Fetch specific prescription detail by ID with hospital isolation check.
+   */
+  async findPrescriptionById(userId: string, recipeId: string) {
+    let pharmacistHospitalId: string | null = null;
+
+    if (userId) {
+      const pharmacistEmployee = await this.db.employee.findUnique({
+        where: { user_id: userId },
+        include: { departmen: true },
+      });
+      pharmacistHospitalId = pharmacistEmployee?.departmen?.hospital_id || null;
+    }
+
+    const recipe = await this.db.doctorRecipe.findUnique({
+      where: { id: recipeId },
       include: {
+        medicalHistory: true,
         patient: {
           include: {
             user: {
@@ -451,82 +725,94 @@ export class ProductsService {
                 email: true,
               },
             },
+            departmen: {
+              include: {
+                hospital: {
+                  select: {
+                    id: true,
+                    name: true,
+                    hospital_code: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        pharmacist: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
         recipeDetails: {
           include: {
-            product: {
-              select: {
-                id: true,
-                code: true,
-                name: true,
-                category: true,
-                unit: true,
-                stock: true,
-                min_stock: true,
-                sell_price: true,
-              },
-            },
+            product: true,
           },
         },
       },
     });
 
-    const formattedData = recipes.map((recipe: any) => {
-      let isAllStockAvailable = true;
+    if (!recipe) {
+      throw new NotFoundException('Detail resep tidak ditemukan');
+    }
 
-      const items = recipe.recipeDetails.map((detail: any) => {
-        const requiredQty = 1;
-        const hasEnoughStock = detail.product?.stock >= requiredQty;
-        if (!hasEnoughStock) {
-          isAllStockAvailable = false;
-        }
+    // Hospital Isolation Protection
+    if (pharmacistHospitalId) {
+      const doctorHospitalId = recipe.doctor?.departmen?.hospital_id;
+      if (doctorHospitalId && doctorHospitalId !== pharmacistHospitalId) {
+        throw new ForbiddenException(
+          'Anda tidak memiliki akses untuk melihat resep dari Rumah Sakit lain',
+        );
+      }
+    }
 
-        return {
-          detail_id: detail.id,
-          product: detail.product
-            ? {
-                id: detail.product.id,
-                code: detail.product.code,
-                name: detail.product.name,
-                category: detail.product.category,
-                unit: detail.product.unit,
-                current_stock: detail.product.stock,
-                sell_price: detail.product.sell_price,
-              }
-            : null,
-          rules_using: detail.rules_using,
-          required_quantity: requiredQty,
-          has_enough_stock: hasEnoughStock,
-        };
-      });
+    const patientName = recipe.patient?.user?.name || '';
+    const mrn = recipe.patient?.medical_record_number || '';
+    const doctorName = recipe.doctor?.user?.name || '';
+    const notes =
+      recipe.medicalHistory?.notes ||
+      recipe.medicalHistory?.complaint ||
+      recipe.verify_notes ||
+      '';
 
-      return {
-        id: recipe.id,
-        no_trx: recipe.no_trx,
-        recipe_date_exec: recipe.recipe_date_exec,
-        status: recipe.status,
-        patient: {
-          id: recipe.patient?.id,
-          medical_record_number: recipe.patient?.medical_record_number,
-          name: recipe.patient?.user?.name,
-          phone: recipe.patient?.user?.phone,
-          birth_date: recipe.patient?.user?.birth_date,
-        },
-        doctor: {
-          id: recipe.doctor?.id,
-          name: recipe.doctor?.user?.name,
-          staff_code: recipe.doctor?.staff_code,
-        },
-        is_ready_to_dispense: isAllStockAvailable,
-        items,
-      };
-    });
+    const items = recipe.recipeDetails.map((detail: any) => ({
+      id: detail.id,
+      product_id: detail.product?.id || detail.product_id,
+      product_name: detail.product?.name || 'Obat',
+      product_code: detail.product?.code || '',
+      rules_using: detail.rules_using,
+      quantity: 10,
+      product_stock: detail.product?.stock ?? 0,
+    }));
 
     return {
       statusCode: 200,
-      message: 'Berhasil mengambil daftar resep pending untuk disiapkan',
-      data: formattedData,
+      message: 'Detail resep berhasil ditemukan',
+      data: {
+        id: recipe.id,
+        no_trx: recipe.no_trx,
+        recipe_date: recipe.recipe_date_exec || recipe.createdAt,
+        status: recipe.status,
+        notes,
+        patient_name: patientName,
+        medical_record_number: mrn,
+        patient_phone: recipe.patient?.user?.phone || '',
+        doctor_name: doctorName,
+        items,
+        hospital: recipe.doctor?.departmen?.hospital
+          ? {
+              id: recipe.doctor.departmen.hospital.id,
+              name: recipe.doctor.departmen.hospital.name,
+              hospital_code: recipe.doctor.departmen.hospital.hospital_code,
+            }
+          : null,
+        createdAt: recipe.createdAt,
+        updatedAt: recipe.updatedAt,
+      },
     };
   }
 
@@ -534,12 +820,22 @@ export class ProductsService {
    * Process prescription fulfillment, reduce product inventory automatically, and complete recipe status.
    */
   async dispensePrescription(userId: string, recipeId: string, dto: DispensePrescriptionDto) {
-    const employeeId = await this.resolveEmployeeId(userId);
+    const pharmacistEmployee = await this.db.employee.findUnique({
+      where: { user_id: userId },
+      include: { departmen: true },
+    });
+    const employeeId = pharmacistEmployee?.id || null;
+    const pharmacistHospitalId = pharmacistEmployee?.departmen?.hospital_id || null;
 
     return this.db.$transaction(async (tx: any) => {
       const recipe = await tx.doctorRecipe.findUnique({
         where: { id: recipeId },
         include: {
+          doctor: {
+            include: {
+              departmen: true,
+            },
+          },
           patient: {
             include: {
               user: { select: { name: true } },
@@ -557,8 +853,22 @@ export class ProductsService {
         throw new NotFoundException('Data resep dokter tidak ditemukan');
       }
 
+      // Hospital Isolation Protection
+      if (pharmacistHospitalId) {
+        const doctorHospitalId = recipe.doctor?.departmen?.hospital_id;
+        if (doctorHospitalId && doctorHospitalId !== pharmacistHospitalId) {
+          throw new ForbiddenException(
+            'Anda tidak memiliki akses untuk menebus resep dari Rumah Sakit lain',
+          );
+        }
+      }
+
       if (recipe.status === 'COMPLETED' || recipe.status === 'SELESAI') {
         throw new BadRequestException('Resep ini sudah selesai ditebus sebelumnya');
+      }
+
+      if (recipe.status === 'CANCELLED' || recipe.status === 'BATAL') {
+        throw new BadRequestException('Resep yang sudah dibatalkan tidak dapat ditebus');
       }
 
       // Map item dispense quantities
@@ -569,7 +879,7 @@ export class ProductsService {
         }
       }
 
-      // Step 1: Stock Validation for all items in recipe
+      // Step 1: Atomic Stock Validation for all items in recipe
       for (const detail of recipe.recipeDetails) {
         const product = detail.product;
         if (!product) {
@@ -579,7 +889,7 @@ export class ProductsService {
 
         if (product.stock < qtyToDeduct) {
           throw new BadRequestException(
-            `Stok produk "${product.name}" (${product.code}) tidak mencukupi! Stok saat ini: ${product.stock}, dibutuhkan: ${qtyToDeduct}`,
+            `Stok obat "${product.name}" (${product.code}) tidak mencukupi! Stok saat ini: ${product.stock}, dibutuhkan: ${qtyToDeduct}`,
           );
         }
       }
@@ -625,25 +935,94 @@ export class ProductsService {
           status: 'COMPLETED',
           ...(employeeId && { pharmacist_id: employeeId }),
           take_med_date: new Date(),
-          verify_notes: dto.verify_notes || 'Ditebus dan diserahkan oleh apoteker',
+          verify_notes: dto.verify_notes || 'Resep terverifikasi oleh Apoteker dan dosis sesuai',
           match_product_recipe: dto.match_product_recipe ?? true,
         },
       });
 
       return {
         statusCode: 200,
-        message: `Resep ${recipe.no_trx} berhasil ditebus dan stok telah dikurangi otomatis`,
+        message: 'Resep berhasil ditebus dan stok produk otomatis dipotong',
         data: {
-          recipe: {
-            id: updatedRecipe.id,
-            no_trx: updatedRecipe.no_trx,
-            status: updatedRecipe.status,
-            take_med_date: updatedRecipe.take_med_date,
-            verify_notes: updatedRecipe.verify_notes,
-          },
+          id: updatedRecipe.id,
+          no_trx: updatedRecipe.no_trx,
+          status: updatedRecipe.status,
+          updatedAt: updatedRecipe.updatedAt,
+          take_med_date: updatedRecipe.take_med_date,
+          verify_notes: updatedRecipe.verify_notes,
           dispensed_items: dispensedItems,
         },
       };
     });
+  }
+
+  /**
+   * Cancel prescription if medication cannot be fulfilled.
+   */
+  async cancelPrescription(userId: string, recipeId: string, dto: CancelPrescriptionDto) {
+    let pharmacistHospitalId: string | null = null;
+
+    if (userId) {
+      const pharmacistEmployee = await this.db.employee.findUnique({
+        where: { user_id: userId },
+        include: { departmen: true },
+      });
+      pharmacistHospitalId = pharmacistEmployee?.departmen?.hospital_id || null;
+    }
+
+    const recipe = await this.db.doctorRecipe.findUnique({
+      where: { id: recipeId },
+      include: {
+        doctor: {
+          include: {
+            departmen: true,
+          },
+        },
+      },
+    });
+
+    if (!recipe) {
+      throw new NotFoundException('Data resep dokter tidak ditemukan');
+    }
+
+    // Hospital Isolation Protection
+    if (pharmacistHospitalId) {
+      const doctorHospitalId = recipe.doctor?.departmen?.hospital_id;
+      if (doctorHospitalId && doctorHospitalId !== pharmacistHospitalId) {
+        throw new ForbiddenException(
+          'Anda tidak memiliki akses untuk membatalkan resep dari Rumah Sakit lain',
+        );
+      }
+    }
+
+    if (recipe.status === 'COMPLETED' || recipe.status === 'SELESAI') {
+      throw new BadRequestException('Resep yang sudah selesai ditebus tidak dapat dibatalkan');
+    }
+
+    if (recipe.status === 'CANCELLED' || recipe.status === 'BATAL') {
+      throw new BadRequestException('Resep ini sudah dibatalkan sebelumnya');
+    }
+
+    const cancelReason = dto.cancel_reason || 'Stok obat kosong / Kontraindikasi dosis';
+
+    const updatedRecipe = await this.db.doctorRecipe.update({
+      where: { id: recipeId },
+      data: {
+        status: 'CANCELLED',
+        verify_notes: `Dibatalkan: ${cancelReason}`,
+      },
+    });
+
+    return {
+      statusCode: 200,
+      message: 'Resep obat berhasil dibatalkan',
+      data: {
+        id: updatedRecipe.id,
+        no_trx: updatedRecipe.no_trx,
+        status: updatedRecipe.status,
+        cancel_reason: cancelReason,
+        updatedAt: updatedRecipe.updatedAt,
+      },
+    };
   }
 }

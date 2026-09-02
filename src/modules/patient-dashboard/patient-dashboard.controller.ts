@@ -15,6 +15,7 @@ import { PatientDashboardService } from './patient-dashboard.service.js';
 import { QueryDoctorScheduleDto } from './dto/query-doctor-schedule.dto.js';
 import { CreateAppointmentDto } from './dto/create-appointment.dto.js';
 import { QueryAppointmentDto } from './dto/query-appointment.dto.js';
+import { QueryPatientPrescriptionDto } from './dto/query-prescription.dto.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 
 /**
@@ -84,4 +85,34 @@ export class PatientDashboardController {
     const user = (request as any).user;
     return this.patientDashboardService.cancelAppointment(user.id, appointmentId);
   }
+
+  /**
+   * GET /patient/dashboard/prescriptions
+   * Get all doctor prescriptions for the logged-in patient.
+   * Query params: ?status=CONFIRMED&type=active
+   */
+  @Get('prescriptions')
+  @HttpCode(HttpStatus.OK)
+  async getPatientPrescriptions(
+    @Req() request: Request,
+    @Query() queryDto: QueryPatientPrescriptionDto,
+  ) {
+    const user = (request as any).user;
+    return this.patientDashboardService.findPatientPrescriptions(user.id, queryDto);
+  }
+
+  /**
+   * GET /patient/dashboard/prescriptions/:id
+   * Get specific prescription details for the logged-in patient with ownership verification.
+   */
+  @Get('prescriptions/:id')
+  @HttpCode(HttpStatus.OK)
+  async getPatientPrescriptionById(
+    @Req() request: Request,
+    @Param('id') recipeId: string,
+  ) {
+    const user = (request as any).user;
+    return this.patientDashboardService.findPatientPrescriptionById(user.id, recipeId);
+  }
 }
+

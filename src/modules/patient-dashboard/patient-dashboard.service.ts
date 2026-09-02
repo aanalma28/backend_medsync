@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { QueryDoctorScheduleDto } from './dto/query-doctor-schedule.dto.js';
 import { CreateAppointmentDto } from './dto/create-appointment.dto.js';
 import { QueryAppointmentDto } from './dto/query-appointment.dto.js';
+import { QueryPatientPrescriptionDto } from './dto/query-prescription.dto.js';
 
 @Injectable()
 export class PatientDashboardService {
@@ -433,4 +434,215 @@ export class PatientDashboardService {
       };
     });
   }
+
+  /**
+   * GET /patient/dashboard/prescriptions
+   * Fetch doctor prescriptions for the logged-in patient with status & type filtering.
+   */
+  async findPatientPrescriptions(userId: string, queryDto: QueryPatientPrescriptionDto) {
+    const patientId = await this.resolvePatientId(userId);
+
+    const where: any = {
+      patient_id: patientId,
+    };
+
+    if (queryDto.status) {
+      where.status = queryDto.status;
+    } else if (queryDto.type === 'active') {
+      where.status = { in: ['PENDING', 'CONFIRMED'] };
+    } else if (queryDto.type === 'history') {
+      where.status = { in: ['COMPLETED', 'CANCELLED'] };
+    }
+
+    const recipes = await this.db.doctorRecipe.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        doctor: {
+          include: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+            departmen: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        pharmacist: {
+          include: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        recipeDetails: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                unit: true,
+                category: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const data = recipes.map((recipe: any) => {
+      const isReady = recipe.status === 'COMPLETED' || recipe.status === 'CONFIRMED';
+
+      const medicines = recipe.recipeDetails.map((detail: any) => ({
+        id: detail.id,
+        product_id: detail.product?.id || detail.product_id,
+        name: detail.product?.name || 'Obat',
+        unit: detail.product?.unit || '',
+        category: detail.product?.category || '',
+        rules_using: detail.rules_using,
+      }));
+
+      return {
+        id: recipe.id,
+        no_trx: recipe.no_trx,
+        recipe_date_exec: recipe.recipe_date_exec,
+        status: recipe.status,
+        is_ready: isReady,
+        take_med_date: recipe.take_med_date,
+        verify_notes: recipe.verify_notes || null,
+        doctor: {
+          id: recipe.doctor?.id,
+          name: recipe.doctor?.user?.name || 'Dokter',
+          department_name: recipe.doctor?.departmen?.name || 'Poli Umum',
+        },
+        pharmacist: recipe.pharmacist
+          ? {
+              id: recipe.pharmacist.id,
+              name: recipe.pharmacist.user?.name || 'Apoteker',
+            }
+          : null,
+        medicines,
+      };
+    });
+
+    return {
+      statusCode: 200,
+      message: 'Berhasil mengambil daftar resep obat pasien',
+      data,
+    };
+  }
+
+  /**
+   * GET /patient/dashboard/prescriptions/:id
+   * Fetch detail for a specific prescription owned by the logged-in patient.
+   */
+  async findPatientPrescriptionById(userId: string, recipeId: string) {
+    const patientId = await this.resolvePatientId(userId);
+
+    const recipe = await this.db.doctorRecipe.findUnique({
+      where: { id: recipeId },
+      include: {
+        medicalHistory: true,
+        doctor: {
+          include: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+            departmen: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        pharmacist: {
+          include: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+        recipeDetails: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                code: true,
+                name: true,
+                unit: true,
+                category: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!recipe) {
+      throw new NotFoundException('Resep obat tidak ditemukan');
+    }
+
+    if (recipe.patient_id !== patientId) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke data resep obat ini');
+    }
+
+    const isReady = recipe.status === 'COMPLETED' || recipe.status === 'CONFIRMED';
+    const notes =
+      recipe.medicalHistory?.notes ||
+      recipe.medicalHistory?.complaint ||
+      recipe.verify_notes ||
+      null;
+
+    const medicines = recipe.recipeDetails.map((detail: any) => ({
+      id: detail.id,
+      product_id: detail.product?.id || detail.product_id,
+      name: detail.product?.name || 'Obat',
+      code: detail.product?.code || '',
+      unit: detail.product?.unit || '',
+      category: detail.product?.category || '',
+      rules_using: detail.rules_using,
+    }));
+
+    return {
+      statusCode: 200,
+      message: 'Detail resep berhasil ditemukan',
+      data: {
+        id: recipe.id,
+        no_trx: recipe.no_trx,
+        recipe_date_exec: recipe.recipe_date_exec,
+        status: recipe.status,
+        is_ready: isReady,
+        take_med_date: recipe.take_med_date,
+        verify_notes: recipe.verify_notes || null,
+        notes,
+        doctor: {
+          id: recipe.doctor?.id,
+          name: recipe.doctor?.user?.name || 'Dokter',
+          department_name: recipe.doctor?.departmen?.name || 'Poli Umum',
+        },
+        pharmacist: recipe.pharmacist
+          ? {
+              id: recipe.pharmacist.id,
+              name: recipe.pharmacist.user?.name || 'Apoteker',
+            }
+          : null,
+        medicines,
+        createdAt: recipe.createdAt,
+        updatedAt: recipe.updatedAt,
+      },
+    };
+  }
 }
+
