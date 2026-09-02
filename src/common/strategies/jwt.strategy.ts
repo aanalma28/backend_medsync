@@ -33,12 +33,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         name: true,
         email: true,
         role: true,
+        is_active: true,
         createdAt: true,
       },
     });
 
     if (!user) {
       throw new UnauthorizedException('User tidak ditemukan');
+    }
+
+    if (!user.is_active) {
+      throw new UnauthorizedException(
+        'Akun anda nonaktif, silahkan hubungi Admin untuk mengaktifkan ulang akun',
+      );
     }
 
     return user;

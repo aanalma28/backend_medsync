@@ -40,7 +40,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     try {
       const result = await (super.canActivate(context) as Promise<boolean>);
       return result;
-    } catch {
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        throw err;
+      }
       throw new UnauthorizedException(
         'Token tidak valid atau sudah expired. Silakan refresh atau login ulang.',
       );

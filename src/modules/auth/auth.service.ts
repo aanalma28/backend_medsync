@@ -144,6 +144,12 @@ export class AuthService {
       throw new UnauthorizedException('Email atau password salah');
     }
 
+    if (!user.is_active) {
+      throw new UnauthorizedException(
+        'Akun anda nonaktif, silahkan hubungi Admin untuk mengaktifkan ulang akun',
+      );
+    }
+
     // Verify password
     const isPasswordValid = await bcrypt.compare(
       loginDto.password,
@@ -155,7 +161,6 @@ export class AuthService {
     }
 
     // Generate JWT access token (15 minutes)
-    // Payload: sub (userId) + role — minimal claims for stateless auth
     const payload = { sub: user.id, role: user.role };
     const accessToken = this.jwtService.sign(payload);
 
@@ -165,13 +170,8 @@ export class AuthService {
     // Handle remember_me
     let rememberToken: string | null = null;
     if (loginDto.remember_me) {
-      // Generate cryptographically random opaque token (64 bytes → 128-char hex)
       rememberToken = crypto.randomBytes(64).toString('hex');
-
-      // HMAC-SHA256 hash before storing in DB
       const hashedRememberToken = this.hmacHash(rememberToken);
-
-      // Store in DB with 30-day expiry
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30);
 
@@ -179,12 +179,6 @@ export class AuthService {
         user.id,
         hashedRememberToken,
         expiresAt,
-      );
-    }
-
-    if (!user.is_active) {
-      throw new UnauthorizedException(
-        'Akun Anda tidak aktif. Silahkan hubungi Admin untuk informasi lebih lanjut.'
       );
     }
 
@@ -258,6 +252,7 @@ export class AuthService {
         name: true,
         email: true,
         role: true,
+        is_active: true,
         employeeUser: {
           select: {
             staff_code: true,
@@ -280,6 +275,12 @@ export class AuthService {
 
       throw new UnauthorizedException(
         'Remember token expired atau tidak valid, silakan login ulang',
+      );
+    }
+
+    if (!user.is_active) {
+      throw new UnauthorizedException(
+        'Akun anda nonaktif, silahkan hubungi Admin untuk mengaktifkan ulang akun',
       );
     }
 
@@ -333,6 +334,7 @@ export class AuthService {
         phone: true,
         address: true,
         birth_date: true,
+        is_active: true,
         createdAt: true,
         // LEFT JOIN with Employee (1-to-1 via user_id)
         // Returns null for patients who have no Employee record
@@ -352,6 +354,12 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('User tidak ditemukan, silakan login ulang');
+    }
+
+    if (!user.is_active) {
+      throw new UnauthorizedException(
+        'Akun anda nonaktif, silahkan hubungi Admin untuk mengaktifkan ulang akun',
+      );
     }
 
     // Flatten nested relations for a clean API response

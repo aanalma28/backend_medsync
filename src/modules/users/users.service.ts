@@ -128,22 +128,34 @@ export class UsersService {
       throw new ConflictException('Email sudah terdaftar');
     }
 
-    const departmen = await this.db.departmen.findUnique({
-      where: { id: createStaffDto.departmen_id },
-    });
+    const isNonEmployeeRole =
+      createStaffDto.role === ('SUPERADMIN' as any) ||
+      createStaffDto.role === ('OWNER' as any);
 
-    if (!departmen) {
-      throw new NotFoundException('Departmen tidak ditemukan');
+    let departmen: any = null;
+    if (createStaffDto.departmen_id) {
+      departmen = await this.db.departmen.findUnique({
+        where: { id: createStaffDto.departmen_id },
+      });
+      if (!departmen && !isNonEmployeeRole) {
+        throw new NotFoundException('Departmen tidak ditemukan');
+      }
+    } else if (!isNonEmployeeRole) {
+      throw new BadRequestException('Departmen tidak boleh kosong untuk role staff');
     }
 
     const hashedPassword = await bcrypt.hash(createStaffDto.password, 10);
-    const staffCode = generateStaffCode(departmen.departmen_code);
+    const staffCode = departmen
+      ? generateStaffCode(departmen.departmen_code)
+      : undefined;
 
     // Fallback address to departmen address if empty or not provided
     const resolvedAddress =
       createStaffDto.address && createStaffDto.address.trim() !== ''
         ? createStaffDto.address
-        : `${departmen.address}, ${departmen.city}`;
+        : departmen
+        ? `${departmen.address || ''}, ${departmen.city || ''}`
+        : 'Alamat Utama';
 
     const result = await this.db.$transaction(async (tx: any) => {
       const user = await tx.user.create({
@@ -159,6 +171,14 @@ export class UsersService {
           is_active: true,
         },
       });
+
+      // Role SUPERADMIN and OWNER do NOT belong in Employee table
+      if (isNonEmployeeRole) {
+        return {
+          ...user,
+          employeeUser: null,
+        };
+      }
 
       const employee = await tx.employee.create({
         data: {

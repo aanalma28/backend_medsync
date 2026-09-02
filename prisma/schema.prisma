@@ -14,10 +14,12 @@ datasource db {
 }
 
 enum Role {
+  OWNER
   SUPERADMIN
   MASTERADMIN
   REGISTER_ADMIN
-  DOCTOR
+  GENERAL_DOCTOR
+  SPECIALIST_DOCTOR
   PHARMACIST
   NURSE
   PATIENT
@@ -69,17 +71,34 @@ model User {
   patientUser         Patient?          @relation("PatientUser")
   employeeUser        Employee?         @relation("EmployeeUser")
   inventoryUser       InventoryLogs[]   @relation("UserWriter")
+  hospitals           Hospital[]        @relation("HospitalOwner")
+}
+
+model Hospital {
+  id            String      @id @default(cuid())
+  user          User        @relation("HospitalOwner", fields: [user_id], references: [id])
+  user_id       String
+  hospital_code String      @unique
+  name          String
+  address       String
+  is_active     Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  departments   Departmen[]
 }
 
 model Departmen {
-  id             String @id @default(cuid())
+  id             String    @id @default(cuid())
+  hospital       Hospital  @relation(fields: [hospital_id], references: [id], onDelete: Cascade)
+  hospital_id    String
   name           String
   departmen_code String
-  address        String
-  city           String  
-  is_active      Boolean @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  address        String?
+  city           String?  
+  is_active      Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   
   employees Employee[]
 }

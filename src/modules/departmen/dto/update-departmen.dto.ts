@@ -2,6 +2,10 @@ import { IsString, IsOptional, MinLength, MaxLength, IsBoolean } from 'class-val
 
 export class UpdateDepartmenDto {
   @IsOptional()
+  @IsString({ message: 'Hospital ID harus berupa string' })
+  hospital_id?: string;
+
+  @IsOptional()
   @IsString({ message: 'Nama departmen harus berupa string' })
   @MinLength(2, { message: 'Nama departmen minimal 2 karakter' })
   @MaxLength(100, { message: 'Nama departmen maksimal 100 karakter' })

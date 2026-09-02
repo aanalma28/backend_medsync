@@ -9,6 +9,7 @@ import {
 } from 'class-validator';
 
 export enum StaffRole {
+  OWNER = 'OWNER',
   SUPERADMIN = 'SUPERADMIN',
   MASTERADMIN = 'MASTERADMIN',
   REGISTER_ADMIN = 'REGISTER_ADMIN',
@@ -35,9 +36,9 @@ export class CreateStaffDto {
   @IsNotEmpty({ message: 'Role staff tidak boleh kosong' })
   role: StaffRole;
 
+  @IsOptional()
   @IsString({ message: 'Departmen ID harus berupa string' })
-  @IsNotEmpty({ message: 'Departmen tidak boleh kosong' })
-  departmen_id: string;
+  departmen_id?: string;
 
   @IsString({ message: 'Telepon harus berupa string' })
   @IsNotEmpty({ message: 'Nomor telepon tidak boleh kosong' })

@@ -21,6 +21,14 @@ export class DepartmenService {
    * Create a new department.
    */
   async create(createDto: CreateDepartmenDto) {
+    const hospital = await this.db.hospital.findUnique({
+      where: { id: createDto.hospital_id },
+    });
+
+    if (!hospital) {
+      throw new NotFoundException('Rumah sakit/klinik (hospital) tidak ditemukan');
+    }
+
     const existing = await this.db.departmen.findFirst({
       where: {
         departmen_code: {
@@ -38,11 +46,21 @@ export class DepartmenService {
 
     const departmen = await this.db.departmen.create({
       data: {
+        hospital_id: createDto.hospital_id,
         name: createDto.name,
         departmen_code: createDto.departmen_code,
         address: createDto.address,
         city: createDto.city,
         is_active: createDto.is_active ?? true,
+      },
+      include: {
+        hospital: {
+          select: {
+            id: true,
+            name: true,
+            hospital_code: true,
+          },
+        },
       },
     });
 
@@ -74,6 +92,7 @@ export class DepartmenService {
         { departmen_code: { contains: search, mode: 'insensitive' } },
         { address: { contains: search, mode: 'insensitive' } },
         { city: { contains: search, mode: 'insensitive' } },
+        { hospital: { name: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -85,6 +104,13 @@ export class DepartmenService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
+          hospital: {
+            select: {
+              id: true,
+              name: true,
+              hospital_code: true,
+            },
+          },
           _count: {
             select: { employees: true },
           },
@@ -94,6 +120,8 @@ export class DepartmenService {
 
     const formattedData = items.map((item: any) => ({
       id: item.id,
+      hospital_id: item.hospital_id,
+      hospital: item.hospital,
       name: item.name,
       departmen_code: item.departmen_code,
       address: item.address,
@@ -124,6 +152,14 @@ export class DepartmenService {
     const departmen = await this.db.departmen.findUnique({
       where: { id },
       include: {
+        hospital: {
+          select: {
+            id: true,
+            name: true,
+            hospital_code: true,
+            address: true,
+          },
+        },
         employees: {
           select: {
             id: true,
@@ -153,6 +189,8 @@ export class DepartmenService {
       message: 'Berhasil mengambil detail departmen',
       data: {
         id: departmen.id,
+        hospital_id: departmen.hospital_id,
+        hospital: departmen.hospital,
         name: departmen.name,
         departmen_code: departmen.departmen_code,
         address: departmen.address,
@@ -168,10 +206,20 @@ export class DepartmenService {
 
   /**
    * Update department by ID.
+   * If is_active is modified, cascade status to all assigned employee users.
    */
   async update(id: string, updateDto: UpdateDepartmenDto) {
     // Check existence
     await this.findOne(id);
+
+    if (updateDto.hospital_id) {
+      const hospital = await this.db.hospital.findUnique({
+        where: { id: updateDto.hospital_id },
+      });
+      if (!hospital) {
+        throw new NotFoundException('Rumah sakit/klinik baru tidak ditemukan');
+      }
+    }
 
     // If updating departmen_code, check for duplicates
     if (updateDto.departmen_code) {
@@ -192,34 +240,61 @@ export class DepartmenService {
       }
     }
 
-    const updated = await this.db.departmen.update({
-      where: { id },
-      data: updateDto,
-    });
+    return this.db.$transaction(async (tx: any) => {
+      const updated = await tx.departmen.update({
+        where: { id },
+        data: updateDto,
+        include: {
+          hospital: {
+            select: {
+              id: true,
+              name: true,
+              hospital_code: true,
+            },
+          },
+        },
+      });
 
-    return {
-      statusCode: 200,
-      message: 'Departmen berhasil diperbarui',
-      data: updated,
-    };
+      if (updateDto.is_active !== undefined) {
+        const targetStatus = updateDto.is_active;
+
+        const employees = await tx.employee.findMany({
+          where: { departmen_id: id },
+          select: { user_id: true },
+        });
+
+        const userIds = employees
+          .map((e: any) => e.user_id)
+          .filter((uid: string) => uid);
+
+        if (userIds.length > 0) {
+          await tx.user.updateMany({
+            where: { id: { in: userIds } },
+            data: { is_active: targetStatus },
+          });
+        }
+      }
+
+      let message = 'Departmen berhasil diperbarui';
+      if (updateDto.is_active === true) {
+        message = 'Departmen beserta staf terkait berhasil diaktifkan kembali';
+      } else if (updateDto.is_active === false) {
+        message = 'Departmen beserta staf terkait berhasil dinonaktifkan';
+      }
+
+      return {
+        statusCode: 200,
+        message,
+        data: updated,
+      };
+    });
   }
 
   /**
    * Remove (soft delete / deactivate) department by ID.
+   * Also deactivates users assigned to employees of this department.
    */
   async remove(id: string) {
-    // Check existence
-    await this.findOne(id);
-
-    const updated = await this.db.departmen.update({
-      where: { id },
-      data: { is_active: false },
-    });
-
-    return {
-      statusCode: 200,
-      message: 'Departmen berhasil dinonaktifkan',
-      data: updated,
-    };
+    return this.update(id, { is_active: false });
   }
 }

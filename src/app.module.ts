@@ -7,6 +7,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { DepartmenModule } from './modules/departmen/departmen.module.js';
+import { HospitalModule } from './modules/hospital/hospital.module.js';
 import { DoctorPracticeModule } from './modules/doctor-practice/doctor-practice.module.js';
 import { PatientDashboardModule } from './modules/patient-dashboard/patient-dashboard.module.js';
 import { ProductsModule } from './modules/products/products.module.js';
@@ -26,6 +27,7 @@ import { CsrfGuard } from './common/guards/csrf.guard.js';
     PrismaModule,
     AuthModule,
     UsersModule,
+    HospitalModule,
     DepartmenModule,
     DoctorPracticeModule,
     PatientDashboardModule,
