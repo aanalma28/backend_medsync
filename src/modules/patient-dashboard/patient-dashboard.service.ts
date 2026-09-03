@@ -263,6 +263,18 @@ export class PatientDashboardService {
         },
       });
 
+      // Tambahkan pembuatan riwayat medis saat appointment dibuat beserta keluhan (complaint)
+      await tx.medicalHistory.create({
+        data: {
+          patient_id: patientId,
+          doctor_id: slot.practice.doctor.id,
+          appoinment_id: appointment.id,
+          complaint: createDto.complaint || '',
+          diagnosis: '',
+          notes: '',
+        },
+      });
+
       if (activeAppointmentsCount + 1 >= slot.max_patient) {
         await tx.slotPractice.update({
           where: { id: slot.id },

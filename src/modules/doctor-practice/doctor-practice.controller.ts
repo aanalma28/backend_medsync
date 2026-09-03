@@ -28,9 +28,9 @@ import type { Request } from 'express';
  * Prefix: /doctor/practice
  */
 @Controller('doctor/practice')
-@Roles('DOCTOR')
+@Roles('GENERAL_DOCTOR', 'SPECIALIST_DOCTOR')
 export class DoctorPracticeController {
-  constructor(private readonly doctorPracticeService: DoctorPracticeService) {}
+  constructor(private readonly doctorPracticeService: DoctorPracticeService) { }
 
   /**
    * POST /doctor/practice

@@ -13,7 +13,7 @@ import { UpdateAppointmentStatusDto } from './dto/update-appointment.dto.js';
 
 @Injectable()
 export class DoctorPracticeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   // Helper cast for Prisma client access
   private get db() {
@@ -147,6 +147,11 @@ export class DoctorPracticeService {
               appoinments: {
                 orderBy: { queue_number: 'asc' },
                 include: {
+                  patientHistory: {
+                    select: {
+                      complaint: true,
+                    },
+                  },
                   patient: {
                     include: {
                       user: {
@@ -208,6 +213,7 @@ export class DoctorPracticeService {
               name: apt.patient.user?.name,
               email: apt.patient.user?.email,
               phone: apt.patient.user?.phone,
+              complaint: apt.patientHistory?.complaint,
             },
             createdAt: apt.createdAt,
           })),
@@ -431,11 +437,11 @@ export class DoctorPracticeService {
       },
       recipe: history.medicalRecipe
         ? {
-            id: history.medicalRecipe.id,
-            no_trx: history.medicalRecipe.no_trx,
-            recipe_date_exec: history.medicalRecipe.recipe_date_exec,
-            status: history.medicalRecipe.status,
-          }
+          id: history.medicalRecipe.id,
+          no_trx: history.medicalRecipe.no_trx,
+          recipe_date_exec: history.medicalRecipe.recipe_date_exec,
+          status: history.medicalRecipe.status,
+        }
         : null,
     }));
 
