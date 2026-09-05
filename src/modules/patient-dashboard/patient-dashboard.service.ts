@@ -13,7 +13,7 @@ import { QueryPatientPrescriptionDto } from './dto/query-prescription.dto.js';
 
 @Injectable()
 export class PatientDashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   private get db() {
     return this.prisma as any;
@@ -269,6 +269,10 @@ export class PatientDashboardService {
           patient_id: patientId,
           doctor_id: slot.practice.doctor.id,
           appoinment_id: appointment.id,
+          patient_name: createDto.patient_name,
+          patient_age: createDto.patient_age,
+          gender: createDto.gender,
+          detail_sympton: createDto.detail_sympton,
           complaint: createDto.complaint || '',
           diagnosis: '',
           notes: '',
@@ -536,9 +540,9 @@ export class PatientDashboardService {
         },
         pharmacist: recipe.pharmacist
           ? {
-              id: recipe.pharmacist.id,
-              name: recipe.pharmacist.user?.name || 'Apoteker',
-            }
+            id: recipe.pharmacist.id,
+            name: recipe.pharmacist.user?.name || 'Apoteker',
+          }
           : null,
         medicines,
       };
@@ -646,9 +650,9 @@ export class PatientDashboardService {
         },
         pharmacist: recipe.pharmacist
           ? {
-              id: recipe.pharmacist.id,
-              name: recipe.pharmacist.user?.name || 'Apoteker',
-            }
+            id: recipe.pharmacist.id,
+            name: recipe.pharmacist.user?.name || 'Apoteker',
+          }
           : null,
         medicines,
         createdAt: recipe.createdAt,

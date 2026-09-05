@@ -150,6 +150,10 @@ export class DoctorPracticeService {
                   patientHistory: {
                     select: {
                       complaint: true,
+                      patient_name: true,
+                      patient_age: true,
+                      gender: true,
+                      detail_sympton: true,
                     },
                   },
                   patient: {
@@ -210,7 +214,10 @@ export class DoctorPracticeService {
             patient: {
               id: apt.patient.id,
               medical_record_number: apt.patient.medical_record_number,
-              name: apt.patient.user?.name,
+              patient_name: apt.patientHistory?.patient_name,
+              patient_age: apt.patientHistory?.patient_age,
+              gender: apt.patientHistory?.gender,
+              detail_sympton: apt.patientHistory?.detail_sympton,
               email: apt.patient.user?.email,
               phone: apt.patient.user?.phone,
               complaint: apt.patientHistory?.complaint,
@@ -270,6 +277,15 @@ export class DoctorPracticeService {
               },
               orderBy: { queue_number: 'asc' },
               include: {
+                patientHistory: {
+                  select: {
+                    complaint: true,
+                    patient_name: true,
+                    patient_age: true,
+                    gender: true,
+                    detail_sympton: true,
+                  },
+                },
                 patient: {
                   include: {
                     user: {
@@ -311,10 +327,14 @@ export class DoctorPracticeService {
             patient: {
               id: apt.patient.id,
               medical_record_number: apt.patient.medical_record_number,
-              name: apt.patient.user?.name,
+              patient_name: apt.patientHistory?.patient_name,
               email: apt.patient.user?.email,
               phone: apt.patient.user?.phone,
-              birth_date: apt.patient.user?.birth_date,
+              gender: apt.patientHistory?.gender,
+              patient_age: apt.patientHistory?.patient_age,
+              complaint: apt.patientHistory?.complaint,
+              detail_sympton: apt.patientHistory?.detail_sympton,
+
             },
             createdAt: apt.createdAt,
           });

@@ -52,6 +52,11 @@ enum AppoinmentStatus{
   COMPLETED  
 }
 
+enum Gender {
+  LAKILAKI
+  PEREMPUAN
+}
+
 model User {
   id                     String    @id @default(cuid())  
   name                   String?
@@ -195,7 +200,7 @@ model DoctorAppoinment {
   slotPractice              SlotPractice @relation("DoctorPracticeSlots", fields: [slot_practice_id], references: [id])
   slot_practice_id          String
   patient                   Patient    @relation("PatientAppoinments", fields: [patient_id], references: [id])
-  patient_id                String
+  patient_id                String    
   status                    AppoinmentStatus @default(PENDING)
   queue_number              Int
   createdAt                 DateTime @default(now())
@@ -212,7 +217,11 @@ model MedicalHistory {
   appoinment_id   String   @unique
   doctor          Employee @relation("DoctorMedicalHistory", fields: [doctor_id], references: [id])
   doctor_id       String
+  patient_name    String
+  patient_age     Int
+  gender          Gender @default(LAKILAKI)
   complaint       String
+  detail_sympton  String
   diagnosis       String
   notes           String
   createdAt       DateTime @default(now())
