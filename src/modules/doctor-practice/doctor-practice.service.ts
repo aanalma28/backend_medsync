@@ -423,11 +423,16 @@ export class DoctorPracticeService {
             },
           },
           medicalRecipe: {
-            select: {
-              id: true,
-              no_trx: true,
-              recipe_date_exec: true,
-              status: true,
+            include: {
+              recipeDetails: {
+                include: {
+                  product: {
+                    select: {
+                      name: true,
+                    }
+                  }
+                },
+              }
             },
           },
         },
@@ -438,6 +443,9 @@ export class DoctorPracticeService {
       id: history.id,
       complaint: history.complaint,
       diagnosis: history.diagnosis,
+      patient_name: history.patient_name,
+      patient_age: history.patient_age,
+      gender: history.gender,
       notes: history.notes,
       createdAt: history.createdAt,
       patient: {
@@ -461,6 +469,10 @@ export class DoctorPracticeService {
           no_trx: history.medicalRecipe.no_trx,
           recipe_date_exec: history.medicalRecipe.recipe_date_exec,
           status: history.medicalRecipe.status,
+          detailRecipe: history.medicalRecipe.recipeDetails.map(detail => ({
+            name: detail.product?.name ?? 'Obat tidak diketahui',
+            rules_using: detail.rules_using,
+          }))
         }
         : null,
     }));
