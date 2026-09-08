@@ -79,7 +79,6 @@ export class UsersService {
 
     const hashedPassword = await bcrypt.hash(createPatientDto.password, 10);
     const medicalRecordNumber = generateMedicalRecordNumber();
-
     const result = await this.db.$transaction(async (tx: any) => {
       const user = await tx.user.create({
         data: {
@@ -95,16 +94,49 @@ export class UsersService {
         },
       });
 
-      const patient = await tx.patient.create({
-        data: {
-          user_id: user.id,
-          medical_record_number: medicalRecordNumber,
-        },
-      });
+      const createdPatients: any[] = [];
+
+      // Support creating multiple patient profiles for one account
+      if (Array.isArray((createPatientDto as any).patients) && (createPatientDto as any).patients.length > 0) {
+        for (const p of (createPatientDto as any).patients) {
+          if (!p.name) throw new BadRequestException('Patient name is required');
+          if (p.age === undefined || p.age === null) throw new BadRequestException('Patient age is required');
+
+          const mrn = p.medical_record_number || generateMedicalRecordNumber();
+
+          const created = await tx.patient.create({
+            data: {
+              user_id: user.id,
+              medical_record_number: mrn,
+              name: p.name,
+              gender: p.gender || 'LAKILAKI',
+              age: p.age,
+              medicine_allergy: p.medicine_allergy || null,
+              is_active: true,
+            },
+          });
+
+          createdPatients.push(created);
+        }
+      } else {
+        // fallback: create a single patient profile using top-level fields
+        const patient = await tx.patient.create({
+          data: {
+            user_id: user.id,
+            medical_record_number: medicalRecordNumber,
+            name: createPatientDto.name || 'Pasien',
+            gender: (createPatientDto as any).gender || 'LAKILAKI',
+            age: (createPatientDto as any).age || 0,
+            medicine_allergy: (createPatientDto as any).medicine_allergy || null,
+            is_active: true,
+          },
+        });
+        createdPatients.push(patient);
+      }
 
       return {
         ...user,
-        patientUser: patient,
+        patientUser: createdPatients,
       };
     });
 

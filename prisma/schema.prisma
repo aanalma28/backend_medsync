@@ -33,6 +33,15 @@ enum Category {
   OTHER           // Lainnya
 }
 
+enum CategoryDepartmen{
+  ADMIN
+  GENERALIST
+  SPECIALIST
+  LABORATORY
+  PHARMACY
+  NURSING
+}
+
 enum SlotStatus{
   OPEN
   CLOSED  
@@ -50,6 +59,14 @@ enum AppoinmentStatus{
   CONFIRMED
   CANCELLED
   COMPLETED  
+}
+
+enum VisitStatus{
+  REGISTERED
+  NURSE_CHECKED
+  DOCTOR_EXAMINED
+  CANCELLED
+  COMPLETED
 }
 
 enum Gender {
@@ -73,7 +90,7 @@ model User {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
       
-  patientUser         Patient?          @relation("PatientUser")
+  patientUser         Patient[]          @relation("PatientUser")
   employeeUser        Employee?         @relation("EmployeeUser")
   inventoryUser       InventoryLogs[]   @relation("UserWriter")
   hospitals           Hospital[]        @relation("HospitalOwner")
@@ -81,8 +98,8 @@ model User {
 
 model Hospital {
   id            String      @id @default(cuid())
-  user          User        @relation("HospitalOwner", fields: [user_id], references: [id])
-  user_id       String
+  user          User?       @relation("HospitalOwner", fields: [user_id], references: [id], onDelete: SetNull)
+  user_id       String?
   hospital_code String      @unique
   name          String
   address       String
@@ -90,15 +107,16 @@ model Hospital {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  departments   Departmen[]
+  hospitalDepartments   Departmen[] @relation("HospitalDepartmens")
 }
 
 model Departmen {
   id             String    @id @default(cuid())
-  hospital       Hospital  @relation(fields: [hospital_id], references: [id], onDelete: Cascade)
+  hospital       Hospital  @relation("HospitalDepartmens", fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id    String
   name           String
   departmen_code String
+  category       CategoryDepartmen @default(GENERALIST)
   address        String?
   city           String?  
   is_active      Boolean   @default(true)
@@ -110,24 +128,32 @@ model Departmen {
 
 model Patient {
   id                      String   @id @default(cuid())
-  user                    User     @relation("PatientUser", fields: [user_id], references: [id])
-  user_id                 String   @unique
+  user                    User?    @relation("PatientUser", fields: [user_id], references: [id], onDelete: SetNull)
+  user_id                 String?
   medical_record_number   String
-  
-  medicalHistories  MedicalHistory[] @relation("PatientMedicalHistory")
+  name                    String
+  gender                  Gender   @default(LAKILAKI)
+  age                     Int
+  medicine_allergy        String?  
+  is_active               Boolean  @default(true)
+  deletedAt               DateTime?
+
+  medicalHistories  Visit[] @relation("PatientVisitHistory")
   patientRecipes    DoctorRecipe[]   @relation("PatientRecipes")
   patientAppoinments DoctorAppoinment[] @relation("PatientAppoinments")
 }
 
 model Employee {
   id              String    @id @default(cuid())
-  user            User      @relation("EmployeeUser", fields: [user_id], references: [id])
-  user_id         String    @unique
+  user            User?     @relation("EmployeeUser", fields: [user_id], references: [id], onDelete: SetNull)
+  user_id         String?   @unique
   staff_code      String
-  departmen       Departmen @relation(fields: [departmen_id], references: [id])
+  gender          Gender    @default(LAKILAKI)
+  departmen       Departmen @relation(fields: [departmen_id], references: [id], onDelete: Restrict)
   departmen_id    String
 
-  medicalHistories  MedicalHistory[] @relation("DoctorMedicalHistory")
+  nurseAssesments   NursingAssesment[] @relation("NursingRecord")
+  doctorAssesments  DoctorAssesment[]  @relation("DoctorRecord")
   doctorRecipes     DoctorRecipe[]   @relation("DoctorRecipes")
   pharmacistRecipes DoctorRecipe[]   @relation("PharmacistRecipes")
   doctorPractice    DoctorPractice[] @relation("DoctorPractice")
@@ -156,7 +182,7 @@ model Products {
 
 model InventoryLogs {
   id                 String   @id @default(cuid())
-  product            Products @relation("ProductInventoryLogs", fields: [product_id], references: [id])
+  product            Products @relation("ProductInventoryLogs", fields: [product_id], references: [id], onDelete: Restrict)
   product_id         String
   type               String
   quantity           Int
@@ -164,16 +190,16 @@ model InventoryLogs {
   exp_date           DateTime?
   supplierName       String?  
   reference_number   String?
-  user               User    @relation("UserWriter", fields: [user_id], references: [id])
-  user_id            String
+  user               User?    @relation("UserWriter", fields: [user_id], references: [id], onDelete: SetNull)
+  user_id            String?
   notes              String?
   createdAt          DateTime @default(now())
 }
 
 model DoctorPractice {
   id            String   @id @default(cuid())
-  doctor        Employee @relation("DoctorPractice", fields: [doctor_id], references: [id])
-  doctor_id     String
+  doctor        Employee? @relation("DoctorPractice", fields: [doctor_id], references: [id], onDelete: SetNull)
+  doctor_id     String?
   practice_date DateTime    
 
   slotsPractice SlotPractice[] @relation("DoctorPracticeSlots")  
@@ -181,7 +207,7 @@ model DoctorPractice {
 
 model SlotPractice {
   id            String   @id @default(cuid())
-  practice      DoctorPractice @relation("DoctorPracticeSlots", fields: [practice_id], references: [id])
+  practice      DoctorPractice @relation("DoctorPracticeSlots", fields: [practice_id], references: [id], onDelete: Cascade)
   practice_id   String
   name          String 
   start_hour    String
@@ -197,52 +223,81 @@ model SlotPractice {
 
 model DoctorAppoinment {
   id                        String   @id @default(cuid())
-  slotPractice              SlotPractice @relation("DoctorPracticeSlots", fields: [slot_practice_id], references: [id])
+  slotPractice              SlotPractice @relation("DoctorPracticeSlots", fields: [slot_practice_id], references: [id], onDelete: Restrict)
   slot_practice_id          String
-  patient                   Patient    @relation("PatientAppoinments", fields: [patient_id], references: [id])
+  patient                   Patient    @relation("PatientAppoinments", fields: [patient_id], references: [id], onDelete: Restrict)
   patient_id                String    
   status                    AppoinmentStatus @default(PENDING)
   queue_number              Int
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
-  patientHistory MedicalHistory? @relation("PatientHistoryAppoinment")
+  patientHistory Visit? @relation("PatientHistoryAppoinment")
 }
 
-model MedicalHistory {
+model Visit {
   id              String   @id @default(cuid())
-  patient         Patient  @relation("PatientMedicalHistory", fields: [patient_id], references: [id])
+  patient         Patient  @relation("PatientVisitHistory", fields: [patient_id], references: [id], onDelete: Restrict)
   patient_id      String
-  appoinment      DoctorAppoinment @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id])
+  appoinment      DoctorAppoinment @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id], onDelete: Cascade)
   appoinment_id   String   @unique
-  doctor          Employee @relation("DoctorMedicalHistory", fields: [doctor_id], references: [id])
-  doctor_id       String
-  patient_name    String
-  patient_age     Int
-  gender          Gender @default(LAKILAKI)
-  complaint       String
-  detail_sympton  String
-  diagnosis       String
-  notes           String
+  status          VisitStatus @default(REGISTERED)
+  complaint       String?
+  detail_sympton  String?    
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  medicalRecipe   DoctorRecipe? @relation("MedicalRecipe")
+  nursingRecord   NursingAssesment? @relation("NursingRecord")
+  doctorRecord    DoctorAssesment? @relation("DoctorRecord")
+  medicalRecipe   DoctorRecipe? @relation("VisitRecipe")
+}
+
+model NursingAssesment {
+  id              String   @id @default(cuid())
+  visit           Visit    @relation("NursingRecord", fields: [visit_id], references: [id], onDelete: Cascade)
+  visit_id        String   @unique
+  nurse_id        String?
+  nurse           Employee? @relation("NursingRecord", fields: [nurse_id], references: [id], onDelete: SetNull)
+  sistolic        Int?
+  diastolic       Int?
+  heart_rate      Int?
+  respiratory_rate Int?
+  temperature     Float?
+  weight          Float?
+  height          Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DoctorAssesment {
+  id              String   @id @default(cuid())
+  visit           Visit    @relation("DoctorRecord", fields: [visit_id], references: [id], onDelete: Cascade)
+  visit_id        String   @unique
+  doctor_id       String?
+  doctor          Employee? @relation("DoctorRecord", fields: [doctor_id], references: [id], onDelete: SetNull)
+  subjective      String?  // S - Keluhan tambahan dari sudut pandang dokter
+  objective       String?  // O - Hasil pemeriksaan fisik dokter
+  assessment      String?  // A - Diagnosis kerja / Kode ICD-10
+  plan            String?  // P - Rencana pengobatan / tindakan medis
+  doctorNotes     String?  // Catatan bebas tambahan dari dokter
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model DoctorRecipe {
   id                    String   @id @default(cuid())
-  medicalHistory        MedicalHistory @relation("MedicalRecipe", fields: [id_history], references: [id])
-  id_history            String   @unique
+  visit_id              String   @unique
+  visit                 Visit    @relation("VisitRecipe", fields: [visit_id], references: [id], onDelete: Cascade)
   no_trx                String
   recipe_date_exec      DateTime
-  patient               Patient     @relation("PatientRecipes", fields: [patient_id], references: [id])
-  patient_id            String
+  patient               Patient?     @relation("PatientRecipes", fields: [patient_id], references: [id], onDelete: Restrict)
+  patient_id            String?
   
-  doctor                Employee     @relation("DoctorRecipes", fields: [doctor_id], references: [id])
-  doctor_id             String
+  doctor                Employee?     @relation("DoctorRecipes", fields: [doctor_id], references: [id], onDelete: SetNull)
+  doctor_id             String?
   
-  pharmacist            Employee?    @relation("PharmacistRecipes", fields: [pharmacist_id], references: [id])
+  pharmacist            Employee?    @relation("PharmacistRecipes", fields: [pharmacist_id], references: [id], onDelete: SetNull)
   pharmacist_id         String?
   
   status                RecipeStatus       @default(PENDING)
@@ -259,10 +314,10 @@ model DoctorRecipe {
 model RecipeDetail {
   id          String       @id @default(cuid())
   
-  recipe      DoctorRecipe @relation(fields: [recipe_id], references: [id])
+  recipe      DoctorRecipe @relation(fields: [recipe_id], references: [id], onDelete: Cascade)
   recipe_id   String
   
-  product    Products     @relation(fields: [product_id], references: [id])
+  product    Products     @relation(fields: [product_id], references: [id], onDelete: Restrict)
   product_id String
   
   rules_using String

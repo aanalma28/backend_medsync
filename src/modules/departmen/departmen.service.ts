@@ -126,6 +126,7 @@ export class DepartmenService {
       departmen_code: item.departmen_code,
       address: item.address,
       city: item.city,
+      category: item.category,
       is_active: item.is_active,
       employee_count: item._count?.employees ?? 0,
       createdAt: item.createdAt,

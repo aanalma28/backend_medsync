@@ -183,17 +183,7 @@ export class AuthService {
     }
 
     let user_code: string | null = null;
-    if (user.role == "PATIENT") {
-      const patientData = await this.prisma.patient.findUnique({
-        where: {
-          user_id: user.id,
-        },
-        select: {
-          medical_record_number: true,
-        },
-      });
-      user_code = patientData?.medical_record_number || null;
-    } else {
+    if (user.role != 'PATIENT') {
       const employeeData = await this.prisma.employee.findUnique({
         where: {
           user_id: user.id,
@@ -214,7 +204,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
-        user_code: user_code,
+        user_code: user_code?? 'PATIENT',
       },
     };
   }

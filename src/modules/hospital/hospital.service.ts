@@ -117,7 +117,7 @@ export class HospitalService {
             },
           },
           _count: {
-            select: { departments: true },
+            select: { hospitalDepartments: true },
           },
         },
       }),
@@ -131,7 +131,7 @@ export class HospitalService {
       is_active: item.is_active,
       user_id: item.user_id,
       owner: item.user,
-      department_count: item._count?.departments ?? 0,
+      department_count: item._count?.hospitalDepartments ?? 0,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     }));
@@ -155,7 +155,7 @@ export class HospitalService {
   async findOne(id: string) {
     const hospital = await this.db.hospital.findUnique({
       where: { id },
-      include: {
+        include: {
         user: {
           select: {
             id: true,
@@ -164,7 +164,7 @@ export class HospitalService {
             role: true,
           },
         },
-        departments: {
+        hospitalDepartments: {
           select: {
             id: true,
             name: true,
@@ -174,7 +174,7 @@ export class HospitalService {
           },
         },
         _count: {
-          select: { departments: true },
+          select: { hospitalDepartments: true },
         },
       },
     });
@@ -194,8 +194,8 @@ export class HospitalService {
         is_active: hospital.is_active,
         user_id: hospital.user_id,
         owner: hospital.user,
-        department_count: hospital._count?.departments ?? 0,
-        departments: hospital.departments,
+        department_count: hospital._count?.hospitalDepartments ?? 0,
+        departments: hospital.hospitalDepartments,
         createdAt: hospital.createdAt,
         updatedAt: hospital.updatedAt,
       },
