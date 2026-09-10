@@ -13,7 +13,7 @@ import { QueryPatientPrescriptionDto } from './dto/query-prescription.dto.js';
 
 @Injectable()
 export class PatientDashboardService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   private get db() {
     return this.prisma as any;
@@ -39,6 +39,25 @@ export class PatientDashboardService {
     }
 
     return patient.id;
+  }
+
+  private async resolvePatientIds(userId: string): Promise<string[]> {
+    const patients = await this.db.patient.findMany({
+      where: {
+        user_id: userId,
+        is_active: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (patients.length === 0) {
+      throw new NotFoundException(
+        'Data pasien tidak ditemukan. Pastikan akun Anda terdaftar sebagai pasien.',
+      );
+    }
+
+    return patients.map((patient: { id: string }) => patient.id);
   }
 
   /**
@@ -197,9 +216,32 @@ export class PatientDashboardService {
    * Assign/book a specific doctor practice slot to create an appointment.
    */
   async createAppointment(userId: string, createDto: CreateAppointmentDto) {
-    const patientId = await this.resolvePatientId(userId);
-
     return this.db.$transaction(async (tx: any) => {
+      const patient = await tx.patient.findUnique({
+        where: { id: createDto.patient_id },
+        select: {
+          id: true,
+          user_id: true,
+          name: true,
+          age: true,
+          gender: true,
+          is_active: true,
+          deletedAt: true,
+        },
+      });
+
+      if (
+        !patient ||
+        patient.user_id !== userId ||
+        !patient.is_active ||
+        patient.deletedAt
+      ) {
+        throw new NotFoundException(
+          'Data pasien tidak ditemukan atau bukan bagian dari akun Anda',
+        );
+      }
+
+      const patientId = patient.id;
       const slot = await tx.slotPractice.findUnique({
         where: { id: createDto.slot_practice_id },
         include: {
@@ -267,19 +309,13 @@ export class PatientDashboardService {
         },
       });
 
-      // Tambahkan pembuatan riwayat medis saat appointment dibuat beserta keluhan (complaint)
-      await tx.medicalHistory.create({
+      // Tambahkan riwayat kunjungan saat appointment dibuat.
+      await tx.visit.create({
         data: {
           patient_id: patientId,
-          doctor_id: slot.practice.doctor.id,
           appoinment_id: appointment.id,
-          patient_name: createDto.patient_name,
-          patient_age: createDto.patient_age,
-          gender: createDto.gender,
           detail_sympton: createDto.detail_sympton,
           complaint: createDto.complaint || '',
-          diagnosis: '',
-          notes: '',
         },
       });
 
@@ -324,13 +360,13 @@ export class PatientDashboardService {
    * Fetch patient's appointments list.
    */
   async findPatientAppointments(userId: string, queryDto: QueryAppointmentDto) {
-    const patientId = await this.resolvePatientId(userId);
+    const patientIds = await this.resolvePatientIds(userId);
 
     const page = queryDto.page || 1;
     const limit = queryDto.limit || 10;
     const skip = (page - 1) * limit;
 
-    const where: any = { patient_id: patientId };
+    const where: any = { patient_id: { in: patientIds } };
 
     if (queryDto.status) {
       where.status = queryDto.status;
@@ -569,7 +605,12 @@ export class PatientDashboardService {
     const recipe = await this.db.doctorRecipe.findUnique({
       where: { id: recipeId },
       include: {
-        medicalHistory: true,
+        visit: {
+          include: {
+            nursingRecord: true,
+            doctorRecord: true,
+          },
+        },
         doctor: {
           include: {
             user: {
@@ -620,8 +661,9 @@ export class PatientDashboardService {
 
     const isReady = recipe.status === 'COMPLETED' || recipe.status === 'CONFIRMED';
     const notes =
-      recipe.medicalHistory?.notes ||
-      recipe.medicalHistory?.complaint ||
+      recipe.visit?.doctorRecord?.doctorNotes ||
+      recipe.visit?.nursingRecord?.notes ||
+      recipe.visit?.complaint ||
       recipe.verify_notes ||
       null;
 

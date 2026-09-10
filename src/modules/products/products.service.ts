@@ -702,7 +702,12 @@ export class ProductsService {
     const recipe = await this.db.doctorRecipe.findUnique({
       where: { id: recipeId },
       include: {
-        medicalHistory: true,
+        visit: {
+          include: {
+            nursingRecord: true,
+            doctorRecord: true,
+          },
+        },
         patient: {
           include: {
             user: {
@@ -774,8 +779,9 @@ export class ProductsService {
     const mrn = recipe.patient?.medical_record_number || '';
     const doctorName = recipe.doctor?.user?.name || '';
     const notes =
-      recipe.medicalHistory?.notes ||
-      recipe.medicalHistory?.complaint ||
+      recipe.visit?.doctorRecord?.doctorNotes ||
+      recipe.visit?.nursingRecord?.notes ||
+      recipe.visit?.complaint ||
       recipe.verify_notes ||
       '';
 

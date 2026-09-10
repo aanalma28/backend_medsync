@@ -45,7 +45,7 @@ export class PatientDashboardController {
   /**
    * POST /patient/dashboard/appointments
    * Assign/book a specific doctor practice slot to create an appointment.
-   * Body: { slot_practice_id: "cuid..." }
+  * Body: { patient_id: "cuid...", slot_practice_id: "cuid...", complaint: "..." }
    */
   @Post('appointments')
   @HttpCode(HttpStatus.CREATED)

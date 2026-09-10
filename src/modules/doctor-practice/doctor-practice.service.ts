@@ -150,9 +150,6 @@ export class DoctorPracticeService {
                   patientHistory: {
                     select: {
                       complaint: true,
-                      patient_name: true,
-                      patient_age: true,
-                      gender: true,
                       detail_sympton: true,
                     },
                   },
@@ -214,9 +211,9 @@ export class DoctorPracticeService {
             patient: {
               id: apt.patient.id,
               medical_record_number: apt.patient.medical_record_number,
-              patient_name: apt.patientHistory?.patient_name,
-              patient_age: apt.patientHistory?.patient_age,
-              gender: apt.patientHistory?.gender,
+              patient_name: apt.patient.name,
+              patient_age: apt.patient.age,
+              gender: apt.patient.gender,
               detail_sympton: apt.patientHistory?.detail_sympton,
               email: apt.patient.user?.email,
               phone: apt.patient.user?.phone,
@@ -280,9 +277,6 @@ export class DoctorPracticeService {
                 patientHistory: {
                   select: {
                     complaint: true,
-                    patient_name: true,
-                    patient_age: true,
-                    gender: true,
                     detail_sympton: true,
                   },
                 },
@@ -327,11 +321,11 @@ export class DoctorPracticeService {
             patient: {
               id: apt.patient.id,
               medical_record_number: apt.patient.medical_record_number,
-              patient_name: apt.patientHistory?.patient_name,
+              patient_name: apt.patient.name,
               email: apt.patient.user?.email,
               phone: apt.patient.user?.phone,
-              gender: apt.patientHistory?.gender,
-              patient_age: apt.patientHistory?.patient_age,
+              gender: apt.patient.gender,
+              patient_age: apt.patient.age,
               complaint: apt.patientHistory?.complaint,
               detail_sympton: apt.patientHistory?.detail_sympton,
 
@@ -368,16 +362,20 @@ export class DoctorPracticeService {
     const limit = queryDto.limit || 10;
     const skip = (page - 1) * limit;
 
-    const where: any = { doctor_id: employeeId };
+    const where: any = {
+      appoinment: {
+        slotPractice: {
+          practice: { doctor_id: employeeId },
+        },
+      },
+    };
 
     // Search by patient name or medical record number
     if (queryDto.search && queryDto.search.trim() !== '') {
       const search = queryDto.search.trim();
       where.OR = [
         {
-          patient: {
-            user: { name: { contains: search, mode: 'insensitive' } },
-          },
+          patient: { name: { contains: search, mode: 'insensitive' } },
         },
         {
           patient: {
@@ -388,8 +386,8 @@ export class DoctorPracticeService {
     }
 
     const [total, items] = await Promise.all([
-      this.db.medicalHistory.count({ where }),
-      this.db.medicalHistory.findMany({
+      this.db.visit.count({ where }),
+      this.db.visit.findMany({
         where,
         skip,
         take: limit,
@@ -422,6 +420,8 @@ export class DoctorPracticeService {
               },
             },
           },
+          nursingRecord: true,
+          doctorRecord: true,
           medicalRecipe: {
             include: {
               recipeDetails: {
@@ -442,16 +442,16 @@ export class DoctorPracticeService {
     const formattedData = items.map((history: any) => ({
       id: history.id,
       complaint: history.complaint,
-      diagnosis: history.diagnosis,
-      patient_name: history.patient_name,
-      patient_age: history.patient_age,
-      gender: history.gender,
-      notes: history.notes,
+      diagnosis: history.doctorRecord?.assessment,
+      patient_name: history.patient.name,
+      patient_age: history.patient.age,
+      gender: history.patient.gender,
+      notes: history.doctorRecord?.doctorNotes || history.nursingRecord?.notes,
       createdAt: history.createdAt,
       patient: {
         id: history.patient.id,
         medical_record_number: history.patient.medical_record_number,
-        name: history.patient.user?.name,
+        name: history.patient.name,
         email: history.patient.user?.email,
         phone: history.patient.user?.phone,
         birth_date: history.patient.user?.birth_date,
