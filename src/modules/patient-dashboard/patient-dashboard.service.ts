@@ -23,8 +23,12 @@ export class PatientDashboardService {
    * Resolve patient_id from logged in user_id.
    */
   private async resolvePatientId(userId: string): Promise<string> {
-    const patient = await this.db.patient.findUnique({
-      where: { user_id: userId },
+    const patient = await this.db.patient.findFirst({
+      where: {
+        user_id: userId,
+        is_active: true,
+        deletedAt: null,
+      },
       select: { id: true },
     });
 

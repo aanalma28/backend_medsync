@@ -204,7 +204,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
-        user_code: user_code?? 'PATIENT',
+        user_code: user_code ?? 'PATIENT',
       },
     };
   }

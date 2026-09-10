@@ -12,6 +12,10 @@ import { CreateStaffDto, StaffRole } from './dto/create-staff.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { QueryUserDto } from './dto/query-user.dto.js';
 import {
+  FamilyPatientDto,
+  UpdateFamilyPatientDto,
+} from './dto/family-patient.dto.js';
+import {
   generateMedicalRecordNumber,
   generateStaffCode,
 } from '../../common/utils/code-generator.util.js';
@@ -25,6 +29,105 @@ export class UsersService {
     return this.prisma as any;
   }
 
+  private isPatientRole(user: { role: string }) {
+    return user.role === 'PATIENT';
+  }
+
+  private async getFamilyPatient(id: string, currentUser: { id: string; role: string }) {
+    const patient = await this.db.patient.findUnique({ where: { id } });
+
+    if (!patient) {
+      throw new NotFoundException('Data pasien keluarga tidak ditemukan');
+    }
+
+    if (this.isPatientRole(currentUser) && patient.user_id !== currentUser.id) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke data pasien ini');
+    }
+
+    return patient;
+  }
+
+  async createFamilyPatient(
+    patientDto: FamilyPatientDto,
+    currentUser: { id: string; role: string },
+  ) {
+    const userId = this.isPatientRole(currentUser)
+      ? currentUser.id
+      : patientDto.user_id;
+
+    if (!userId) {
+      throw new BadRequestException('user_id wajib diisi oleh admin');
+    }
+
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user || user.role !== 'PATIENT') {
+      throw new NotFoundException('Akun pasien tidak ditemukan');
+    }
+
+    return await this.db.patient.create({
+      data: {
+        user_id: userId,
+        medical_record_number: generateMedicalRecordNumber(),
+        name: patientDto.name,
+        gender: patientDto.gender || 'LAKILAKI',
+        age: patientDto.age,
+        medicine_allergy: patientDto.medicine_allergy || null,
+      },
+    });
+  }
+
+  async findFamilyPatients(
+    currentUser: { id: string; role: string },
+    userId?: string,
+  ) {
+    const ownerId = this.isPatientRole(currentUser) ? currentUser.id : userId;
+    if (this.isPatientRole(currentUser) || ownerId) {
+      return await this.db.patient.findMany({
+        where: { user_id: ownerId, deletedAt: null },
+        orderBy: { name: 'asc' },
+      });
+    }
+
+    return await this.db.patient.findMany({
+      where: { deletedAt: null },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async findFamilyPatient(id: string, currentUser: { id: string; role: string }) {
+    const patient = await this.getFamilyPatient(id, currentUser);
+    if (patient.deletedAt || !patient.is_active) {
+      throw new NotFoundException('Data pasien keluarga tidak ditemukan');
+    }
+    return patient;
+  }
+
+  async updateFamilyPatient(
+    id: string,
+    patientDto: UpdateFamilyPatientDto,
+    currentUser: { id: string; role: string },
+  ) {
+    const patient = await this.findFamilyPatient(id, currentUser);
+    const data: Record<string, unknown> = {};
+
+    if (patientDto.name !== undefined) data.name = patientDto.name;
+    if (patientDto.gender !== undefined) data.gender = patientDto.gender;
+    if (patientDto.age !== undefined) data.age = patientDto.age;
+    if (patientDto.medicine_allergy !== undefined) {
+      data.medicine_allergy = patientDto.medicine_allergy || null;
+    }
+
+    return await this.db.patient.update({ where: { id: patient.id }, data });
+  }
+
+  async removeFamilyPatient(id: string, currentUser: { id: string; role: string }) {
+    const patient = await this.findFamilyPatient(id, currentUser);
+    return await this.db.patient.update({
+      where: { id: patient.id },
+      data: { is_active: false, deletedAt: new Date() },
+    });
+  }
+
   /**
    * Find a user by email and role.
    */
@@ -33,7 +136,7 @@ export class UsersService {
     if (role) {
       where.role = role;
     }
-    return this.db.user.findFirst({
+    return await this.db.user.findFirst({
       where,
     });
   }
@@ -46,7 +149,7 @@ export class UsersService {
     hashedToken: string,
     expires: Date,
   ) {
-    return this.db.user.update({
+    return await this.db.user.update({
       where: { id: userId },
       data: {
         remember_token: hashedToken,
@@ -59,7 +162,7 @@ export class UsersService {
    * Clear remember_me token on logout.
    */
   async clearRememberToken(userId: string) {
-    return this.db.user.update({
+    return await this.db.user.update({
       where: { id: userId },
       data: {
         remember_token: null,
@@ -506,7 +609,7 @@ export class UsersService {
       return user;
     });
 
-    return this.findById(targetId);
+    return await this.findById(targetId);
   }
 
   /**

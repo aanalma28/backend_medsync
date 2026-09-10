@@ -16,12 +16,94 @@ import { CreatePatientDto } from './dto/create-patient.dto.js';
 import { CreateStaffDto } from './dto/create-staff.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { QueryUserDto } from './dto/query-user.dto.js';
+import {
+  FamilyPatientDto,
+  UpdateFamilyPatientDto,
+} from './dto/family-patient.dto.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import type { Request } from 'express';
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Post('family/patients')
+  @Roles('SUPERADMIN', 'REGISTER_ADMIN', 'PATIENT')
+  @HttpCode(HttpStatus.CREATED)
+  async createFamilyPatient(
+    @Body() familyPatientDto: FamilyPatientDto,
+    @Req() req: Request,
+  ) {
+    const currentUser = (req as any).user;
+    const data = await this.usersService.createFamilyPatient(
+      familyPatientDto,
+      currentUser,
+    );
+    return {
+      statusCode: 201,
+      message: 'Data pasien keluarga berhasil ditambahkan',
+      data,
+    };
+  }
+
+  @Get('family/patients')
+  @Roles('SUPERADMIN', 'REGISTER_ADMIN', 'PATIENT')
+  async findFamilyPatients(@Req() req: Request, @Query('user_id') userId?: string) {
+    const currentUser = (req as any).user;
+    const data = await this.usersService.findFamilyPatients(currentUser, userId);
+    return {
+      statusCode: 200,
+      message: 'Data pasien keluarga berhasil diambil',
+      data,
+    };
+  }
+
+  @Get('family/patients/:id')
+  @Roles('SUPERADMIN', 'REGISTER_ADMIN', 'PATIENT')
+  async findFamilyPatient(@Param('id') id: string, @Req() req: Request) {
+    const data = await this.usersService.findFamilyPatient(
+      id,
+      (req as any).user,
+    );
+    return {
+      statusCode: 200,
+      message: 'Detail pasien keluarga berhasil diambil',
+      data,
+    };
+  }
+
+  @Patch('family/patients/:id')
+  @Roles('SUPERADMIN', 'REGISTER_ADMIN', 'PATIENT')
+  async updateFamilyPatient(
+    @Param('id') id: string,
+    @Body() familyPatientDto: UpdateFamilyPatientDto,
+    @Req() req: Request,
+  ) {
+    const data = await this.usersService.updateFamilyPatient(
+      id,
+      familyPatientDto,
+      (req as any).user,
+    );
+    return {
+      statusCode: 200,
+      message: 'Data pasien keluarga berhasil diperbarui',
+      data,
+    };
+  }
+
+  @Delete('family/patients/:id')
+  @Roles('SUPERADMIN', 'REGISTER_ADMIN', 'PATIENT')
+  async removeFamilyPatient(@Param('id') id: string, @Req() req: Request) {
+    const data = await this.usersService.removeFamilyPatient(
+      id,
+      (req as any).user,
+    );
+    return {
+      statusCode: 200,
+      message: 'Data pasien keluarga berhasil dinonaktifkan',
+      data,
+    };
+  }
 
   /**
    * POST /users/patient
@@ -134,6 +216,6 @@ export class UsersController {
   @Roles('SUPERADMIN', 'MASTERADMIN', 'REGISTER_ADMIN')
   async remove(@Param('id') id: string, @Req() req: Request) {
     const currentUser = (req as any).user;
-    return this.usersService.remove(id, currentUser);
+    return await this.usersService.remove(id, currentUser);
   }
 }
