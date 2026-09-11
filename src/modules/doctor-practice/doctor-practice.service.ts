@@ -151,6 +151,26 @@ export class DoctorPracticeService {
                     select: {
                       complaint: true,
                       detail_sympton: true,
+                      doctorRecord: {
+                        select: {
+                          objective: true,
+                          assessment: true,
+                          plan: true,
+                          doctorNotes: true,
+                        },
+                      },
+                      nursingRecord: {
+                        select: {
+                          sistolic: true,
+                          diastolic: true,
+                          heart_rate: true,
+                          respiratory_rate: true,
+                          temperature: true,
+                          weight: true,
+                          height: true,
+                          notes: true,
+                        },
+                      },
                     },
                   },
                   patient: {
@@ -208,6 +228,25 @@ export class DoctorPracticeService {
             id: apt.id,
             queue_number: apt.queue_number,
             status: apt.status,
+            doctor_assesment: apt.patientHistory?.doctorRecord
+              ? {
+                objective: apt.patientHistory.doctorRecord.objective,
+                assesment: apt.patientHistory.doctorRecord.assessment,
+                plan: apt.patientHistory.doctorRecord.plan,
+                notes: apt.patientHistory.doctorRecord.doctorNotes,
+              }
+              : null,
+            nurse_assesment: apt.patientHistory?.nursingRecord
+              ? {
+                sistolic: apt.patientHistory.nursingRecord.sistolic,
+                diastolic: apt.patientHistory.nursingRecord.diastolic,
+                heart_rate: apt.patientHistory.nursingRecord.heart_rate,
+                respiratory_rate: apt.patientHistory.nursingRecord.respiratory_rate,
+                temperature: apt.patientHistory.nursingRecord.temperature,
+                weight: apt.patientHistory.nursingRecord.weight,
+                height: apt.patientHistory.nursingRecord.height,
+              }
+              : null,
             patient: {
               id: apt.patient.id,
               medical_record_number: apt.patient.medical_record_number,
@@ -278,6 +317,26 @@ export class DoctorPracticeService {
                   select: {
                     complaint: true,
                     detail_sympton: true,
+                    doctorRecord: {
+                      select: {
+                        objective: true,
+                        assessment: true,
+                        plan: true,
+                        doctorNotes: true,
+                      },
+                    },
+                    nursingRecord: {
+                      select: {
+                        sistolic: true,
+                        diastolic: true,
+                        heart_rate: true,
+                        respiratory_rate: true,
+                        temperature: true,
+                        weight: true,
+                        height: true,
+                        notes: true,
+                      },
+                    },
                   },
                 },
                 patient: {
@@ -309,9 +368,30 @@ export class DoctorPracticeService {
       for (const slot of practice.slotsPractice) {
         for (const apt of slot.appoinments) {
           patients.push({
-            appointment_id: apt.id,
-            queue_number: apt.queue_number,
-            status: apt.status,
+            appointment: {
+              id: apt.id,
+              queue_number: apt.queue_number,
+              status: apt.status,
+              doctor_assesment: apt.patientHistory?.doctorRecord
+                ? {
+                  objective: apt.patientHistory.doctorRecord.objective,
+                  assesment: apt.patientHistory.doctorRecord.assessment,
+                  plan: apt.patientHistory.doctorRecord.plan,
+                  notes: apt.patientHistory.doctorRecord.doctorNotes,
+                }
+                : null,
+              nurse_assesment: apt.patientHistory?.nursingRecord
+                ? {
+                  sistolic: apt.patientHistory.nursingRecord.sistolic,
+                  diastolic: apt.patientHistory.nursingRecord.diastolic,
+                  heart_rate: apt.patientHistory.nursingRecord.heart_rate,
+                  respiratory_rate: apt.patientHistory.nursingRecord.respiratory_rate,
+                  temperature: apt.patientHistory.nursingRecord.temperature,
+                  weight: apt.patientHistory.nursingRecord.weight,
+                  height: apt.patientHistory.nursingRecord.height,
+                }
+                : null,
+            },
             slot: {
               id: slot.id,
               name: slot.name,
@@ -328,7 +408,6 @@ export class DoctorPracticeService {
               patient_age: apt.patient.age,
               complaint: apt.patientHistory?.complaint,
               detail_sympton: apt.patientHistory?.detail_sympton,
-
             },
             createdAt: apt.createdAt,
           });
@@ -442,11 +521,10 @@ export class DoctorPracticeService {
     const formattedData = items.map((history: any) => ({
       id: history.id,
       complaint: history.complaint,
-      diagnosis: history.doctorRecord?.assessment,
+      detail_sympton: history.detail_sympton,      
       patient_name: history.patient.name,
       patient_age: history.patient.age,
       gender: history.patient.gender,
-      notes: history.doctorRecord?.doctorNotes || history.nursingRecord?.notes,
       createdAt: history.createdAt,
       patient: {
         id: history.patient.id,
@@ -462,6 +540,25 @@ export class DoctorPracticeService {
         status: history.appoinment.status,
         practice_date: history.appoinment.slotPractice?.practice?.practice_date,
         slot_name: history.appoinment.slotPractice?.name,
+        doctor_assesment: history.doctorRecord
+          ? {
+            objective: history.doctorRecord.objective,
+            assesment: history.doctorRecord.assessment,
+            plan: history.doctorRecord.plan,
+            notes: history.doctorRecord.doctorNotes,
+          }
+          : null,
+        nurse_assesment: history.nursingRecord
+          ? {
+            sistolic: history.nursingRecord.sistolic,
+            diastolic: history.nursingRecord.diastolic,
+            heart_rate: history.nursingRecord.heart_rate,
+            respiratory_rate: history.nursingRecord.respiratory_rate,
+            temperature: history.nursingRecord.temperature,
+            weight: history.nursingRecord.weight,
+            height: history.nursingRecord.height,
+          }
+          : null,
       },
       recipe: history.medicalRecipe
         ? {

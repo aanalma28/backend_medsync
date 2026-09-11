@@ -380,6 +380,31 @@ export class PatientDashboardService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
+          patientHistory: {
+            select: {
+              complaint: true,
+              detail_sympton: true,
+              doctorRecord: {
+                select: {
+                  objective: true,
+                  assessment: true,
+                  plan: true,
+                  doctorNotes: true,
+                },
+              },
+              nursingRecord: {
+                select: {
+                  sistolic: true,
+                  diastolic: true,
+                  heart_rate: true,
+                  respiratory_rate: true,
+                  temperature: true,
+                  weight: true,
+                  height: true,
+                },
+              },
+            },
+          },
           slotPractice: {
             include: {
               practice: {
@@ -398,12 +423,7 @@ export class PatientDashboardService {
       }),
     ]);
 
-    const formattedData = items.map((apt: any) => ({
-      id: apt.id,
-      queue_number: apt.queue_number,
-      status: apt.status,
-      createdAt: apt.createdAt,
-      updatedAt: apt.updatedAt,
+    const formattedData = items.map((apt: any) => ({      
       slot: {
         id: apt.slotPractice?.id,
         name: apt.slotPractice?.name,
@@ -411,6 +431,34 @@ export class PatientDashboardService {
         end_hour: apt.slotPractice?.end_hour,
       },
       practice_date: apt.slotPractice?.practice?.practice_date,
+      appointment: {
+        id: apt.id,
+        queue_number: apt.queue_number,
+        status: apt.status,
+        createdAt: apt.createdAt,
+        updatedAt: apt.updatedAt,
+        complaint: apt.patientHistory?.complaint,
+        detail_sympton: apt.patientHistory?.detail_sympton,
+        doctor_assesment: apt.patientHistory?.doctorRecord
+          ? {
+            objective: apt.patientHistory.doctorRecord.objective,
+            assesment: apt.patientHistory.doctorRecord.assessment,
+            plan: apt.patientHistory.doctorRecord.plan,
+            notes: apt.patientHistory.doctorRecord.doctorNotes,
+          }
+          : null,
+        nurse_assesment: apt.patientHistory?.nursingRecord
+          ? {
+            sistolic: apt.patientHistory.nursingRecord.sistolic,
+            diastolic: apt.patientHistory.nursingRecord.diastolic,
+            heart_rate: apt.patientHistory.nursingRecord.heart_rate,
+            respiratory_rate: apt.patientHistory.nursingRecord.respiratory_rate,
+            temperature: apt.patientHistory.nursingRecord.temperature,
+            weight: apt.patientHistory.nursingRecord.weight,
+            height: apt.patientHistory.nursingRecord.height,
+          }
+          : null,
+      },      
       doctor: {
         id: apt.slotPractice?.practice?.doctor?.id,
         name: apt.slotPractice?.practice?.doctor?.user?.name,
@@ -607,6 +655,7 @@ export class PatientDashboardService {
       include: {
         visit: {
           include: {
+            appoinment: true,
             nursingRecord: true,
             doctorRecord: true,
           },
@@ -689,6 +738,32 @@ export class PatientDashboardService {
         take_med_date: recipe.take_med_date,
         verify_notes: recipe.verify_notes || null,
         notes,
+        complaint: recipe.visit?.complaint || null,
+        detail_sympton: recipe.visit?.detail_sympton || null,
+        appointment: {
+          id: recipe.visit?.appoinment?.id,
+          queue_number: recipe.visit?.appoinment?.queue_number,
+          status: recipe.visit?.appoinment?.status,
+          doctor_assesment: recipe.visit?.doctorRecord
+            ? {
+              objective: recipe.visit.doctorRecord.objective,
+              assesment: recipe.visit.doctorRecord.assessment,
+              plan: recipe.visit.doctorRecord.plan,
+              notes: recipe.visit.doctorRecord.doctorNotes,
+            }
+            : null,
+          nurse_assesment: recipe.visit?.nursingRecord
+            ? {
+              sistolic: recipe.visit.nursingRecord.sistolic,
+              diastolic: recipe.visit.nursingRecord.diastolic,
+              heart_rate: recipe.visit.nursingRecord.heart_rate,
+              respiratory_rate: recipe.visit.nursingRecord.respiratory_rate,
+              temperature: recipe.visit.nursingRecord.temperature,
+              weight: recipe.visit.nursingRecord.weight,
+              height: recipe.visit.nursingRecord.height,
+            }
+            : null,
+        },
         doctor: {
           id: recipe.doctor?.id,
           name: recipe.doctor?.user?.name || 'Dokter',
