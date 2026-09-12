@@ -380,6 +380,14 @@ export class PatientDashboardService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
+          patient: {
+            select: {
+              medical_record_number: true,
+              name: true,
+              gender: true,
+              age: true,
+            },
+          },
           patientHistory: {
             select: {
               complaint: true,
@@ -465,6 +473,12 @@ export class PatientDashboardService {
         staff_code: apt.slotPractice?.practice?.doctor?.staff_code,
         department: apt.slotPractice?.practice?.doctor?.departmen,
       },
+      patient: {
+        patient_code: apt.patient?.medical_record_number,
+        name: apt.patient?.name,
+        gender: apt.patient?.gender,
+        age: apt.patient?.age,
+      }
     }));
 
     return {
