@@ -242,6 +242,7 @@ model Visit {
   appoinment      DoctorAppoinment @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id], onDelete: Cascade)
   appoinment_id   String   @unique
   status          VisitStatus @default(REGISTERED)
+  payerType       String   @default("Umum")
   complaint       String?
   detail_sympton  String?    
   createdAt       DateTime @default(now())

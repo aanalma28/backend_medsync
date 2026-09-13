@@ -66,6 +66,7 @@ export class DoctorPracticeController {
    * GET /doctor/practice/today-patients
    * View patients with appointments today.
    */
+  @Roles('GENERAL_DOCTOR', 'SPECIALIST_DOCTOR', 'NURSE')
   @Get('today-patients')
   @HttpCode(HttpStatus.OK)
   async getTodayPatients(@Req() request: Request) {

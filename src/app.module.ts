@@ -11,6 +11,7 @@ import { HospitalModule } from './modules/hospital/hospital.module.js';
 import { DoctorPracticeModule } from './modules/doctor-practice/doctor-practice.module.js';
 import { PatientDashboardModule } from './modules/patient-dashboard/patient-dashboard.module.js';
 import { ProductsModule } from './modules/products/products.module.js';
+import { NurseDashboardModule } from './modules/nurse-dashboard/nurse-dashboard.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { CsrfGuard } from './common/guards/csrf.guard.js';
@@ -32,6 +33,7 @@ import { CsrfGuard } from './common/guards/csrf.guard.js';
     DoctorPracticeModule,
     PatientDashboardModule,
     ProductsModule,
+    NurseDashboardModule,
   ],
   controllers: [AppController],
   providers: [

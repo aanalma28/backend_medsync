@@ -480,6 +480,7 @@ export class DoctorPracticeService {
                   name: true,
                   email: true,
                   phone: true,
+                  address: true,
                   birth_date: true,
                 },
               },
@@ -508,10 +509,10 @@ export class DoctorPracticeService {
                   product: {
                     select: {
                       name: true,
-                    }
-                  }
+                    },
+                  },
                 },
-              }
+              },
             },
           },
         },
@@ -532,6 +533,7 @@ export class DoctorPracticeService {
         name: history.patient.name,
         email: history.patient.user?.email,
         phone: history.patient.user?.phone,
+        address: history.patient.user?.address,
         birth_date: history.patient.user?.birth_date,
       },
       appointment: {
