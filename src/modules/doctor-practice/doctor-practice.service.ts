@@ -3,13 +3,14 @@ import {
   NotFoundException,
   ForbiddenException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { CreatePracticeDto } from './dto/create-practice.dto.js';
 import { QueryPracticeDto } from './dto/query-practice.dto.js';
 import { QueryPatientHistoryDto } from './dto/query-patient-history.dto.js';
 import { ToggleSlotActiveDto, UpdateSlotStatusDto } from './dto/update-slot.dto.js';
-import { UpdateAppointmentStatusDto } from './dto/update-appointment.dto.js';
+import { UpdateDoctorVisitStatusDto } from './dto/update-visit-status.dto.js';
 
 @Injectable()
 export class DoctorPracticeService {
@@ -149,6 +150,8 @@ export class DoctorPracticeService {
                 include: {
                   patientHistory: {
                     select: {
+                      id: true,
+                      status: true,
                       complaint: true,
                       detail_sympton: true,
                       doctorRecord: {
@@ -228,6 +231,8 @@ export class DoctorPracticeService {
             id: apt.id,
             queue_number: apt.queue_number,
             status: apt.status,
+            visit_id: apt.patientHistory?.id ?? null,
+            visit_status: apt.patientHistory?.status ?? null,
             doctor_assesment: apt.patientHistory?.doctorRecord
               ? {
                 objective: apt.patientHistory.doctorRecord.objective,
@@ -245,6 +250,7 @@ export class DoctorPracticeService {
                 temperature: apt.patientHistory.nursingRecord.temperature,
                 weight: apt.patientHistory.nursingRecord.weight,
                 height: apt.patientHistory.nursingRecord.height,
+                notes: apt.patientHistory.nursingRecord.notes,
               }
               : null,
             patient: {
@@ -315,6 +321,8 @@ export class DoctorPracticeService {
               include: {
                 patientHistory: {
                   select: {
+                    id: true,
+                    status: true,
                     complaint: true,
                     detail_sympton: true,
                     doctorRecord: {
@@ -372,6 +380,8 @@ export class DoctorPracticeService {
               id: apt.id,
               queue_number: apt.queue_number,
               status: apt.status,
+              visit_id: apt.patientHistory?.id ?? null,
+              visit_status: apt.patientHistory?.status ?? null,
               doctor_assesment: apt.patientHistory?.doctorRecord
                 ? {
                   objective: apt.patientHistory.doctorRecord.objective,
@@ -389,6 +399,7 @@ export class DoctorPracticeService {
                   temperature: apt.patientHistory.nursingRecord.temperature,
                   weight: apt.patientHistory.nursingRecord.weight,
                   height: apt.patientHistory.nursingRecord.height,
+                  notes: apt.patientHistory.nursingRecord.notes,
                 }
                 : null,
             },
@@ -522,7 +533,7 @@ export class DoctorPracticeService {
     const formattedData = items.map((history: any) => ({
       id: history.id,
       complaint: history.complaint,
-      detail_sympton: history.detail_sympton,      
+      detail_sympton: history.detail_sympton,
       patient_name: history.patient.name,
       patient_age: history.patient.age,
       gender: history.patient.gender,
@@ -540,6 +551,8 @@ export class DoctorPracticeService {
         id: history.appoinment.id,
         queue_number: history.appoinment.queue_number,
         status: history.appoinment.status,
+        visit_id: history.id,
+        visit_status: history.status,
         practice_date: history.appoinment.slotPractice?.practice?.practice_date,
         slot_name: history.appoinment.slotPractice?.name,
         doctor_assesment: history.doctorRecord
@@ -559,6 +572,7 @@ export class DoctorPracticeService {
             temperature: history.nursingRecord.temperature,
             weight: history.nursingRecord.weight,
             height: history.nursingRecord.height,
+            notes: history.nursingRecord.notes,
           }
           : null,
       },
@@ -673,50 +687,86 @@ export class DoctorPracticeService {
   }
 
   // ─────────────────────────────────────────────
-  // 7. Update Appointment Status
+  // 7. Update Visit Status
   // ─────────────────────────────────────────────
 
   /**
-   * Update an appointment's status (PENDING/CONFIRMED/CANCELLED/COMPLETED).
-   * Verifies the appointment's slot belongs to the logged-in doctor.
+   * Doctors may manually set Visit.status to DOCTOR_EXAMINED or CANCELLED.
+   * Verifies the visit's appointment belongs to the logged-in doctor's practice.
+   * The associated DoctorAppoinment.status is not modified.
    */
-  async updateAppointmentStatus(
+  async updateVisitStatus(
     userId: string,
-    appointmentId: string,
-    dto: UpdateAppointmentStatusDto,
+    visitId: string,
+    dto: UpdateDoctorVisitStatusDto,
   ) {
+    // Enforce allowed values even when called without HTTP DTO validation.
+    if (dto.status !== 'DOCTOR_EXAMINED' && dto.status !== 'CANCELLED') {
+      throw new BadRequestException(
+        'Dokter hanya dapat mengubah status kunjungan menjadi DOCTOR_EXAMINED atau CANCELLED',
+      );
+    }
+
     const employeeId = await this.resolveEmployeeId(userId);
 
-    const appointment = await this.db.doctorAppoinment.findUnique({
-      where: { id: appointmentId },
-      include: {
-        slotPractice: {
-          include: {
-            practice: {
-              select: { doctor_id: true },
+    const visit = await this.db.visit.findUnique({
+      where: { id: visitId },
+      select: {
+        id: true,
+        status: true,
+        appoinment: {
+          select: {
+            slotPractice: {
+              select: {
+                practice: {
+                  select: { doctor_id: true },
+                },
+              },
             },
           },
         },
       },
     });
 
-    if (!appointment) {
-      throw new NotFoundException('Janji temu tidak ditemukan');
+    if (!visit) {
+      throw new NotFoundException('Kunjungan pasien tidak ditemukan');
     }
 
-    if (appointment.slotPractice.practice.doctor_id !== employeeId) {
-      throw new ForbiddenException('Anda tidak memiliki akses untuk mengubah janji temu ini');
+    if (visit.appoinment.slotPractice.practice.doctor_id !== employeeId) {
+      throw new ForbiddenException(
+        'Anda tidak memiliki akses untuk mengubah kunjungan ini',
+      );
     }
 
-    const updated = await this.db.doctorAppoinment.update({
-      where: { id: appointmentId },
+    // Compare and update atomically so concurrent status changes are not lost.
+    // Recheck practice ownership as part of the update.
+    const updatedVisits = await this.db.visit.updateMany({
+      where: {
+        id: visitId,
+        status: visit.status,
+        appoinment: {
+          slotPractice: {
+            practice: { doctor_id: employeeId },
+          },
+        },
+      },
       data: { status: dto.status },
     });
 
+    if (updatedVisits.count !== 1) {
+      throw new ConflictException(
+        'Data kunjungan berubah sebelum disimpan. Silakan muat ulang data dan coba kembali.',
+      );
+    }
+
     return {
       statusCode: 200,
-      message: `Status janji temu berhasil diubah menjadi ${dto.status}`,
-      data: updated,
+      message: `Status kunjungan berhasil diubah menjadi ${dto.status}`,
+      data: {
+        visitId,
+        previousStatus: visit.status,
+        status: dto.status,
+      },
     };
   }
 }

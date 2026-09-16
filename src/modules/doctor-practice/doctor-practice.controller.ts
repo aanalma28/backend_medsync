@@ -15,15 +15,15 @@ import { CreatePracticeDto } from './dto/create-practice.dto.js';
 import { QueryPracticeDto } from './dto/query-practice.dto.js';
 import { QueryPatientHistoryDto } from './dto/query-patient-history.dto.js';
 import { ToggleSlotActiveDto, UpdateSlotStatusDto } from './dto/update-slot.dto.js';
-import { UpdateAppointmentStatusDto } from './dto/update-appointment.dto.js';
+import { UpdateDoctorVisitStatusDto } from './dto/update-visit-status.dto.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import type { Request } from 'express';
 
 /**
  * Doctor Practice Controller — handles doctor dashboard actions.
  *
- * All endpoints require DOCTOR role and use the logged-in doctor's identity
- * (from JWT) to scope data access.
+ * Endpoints require a doctor role unless overridden at method level.
+ * The logged-in employee's identity (from JWT) scopes data access.
  *
  * Prefix: /doctor/practice
  */
@@ -122,21 +122,21 @@ export class DoctorPracticeController {
   }
 
   /**
-   * PATCH /doctor/practice/appointments/:id/status
-   * Update an appointment's status (PENDING/CONFIRMED/CANCELLED/COMPLETED).
-   * Body: { status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" }
+   * PATCH /doctor/practice/visits/:visitId/status
+   * Update Visit.status without changing the associated appointment status.
+   * Body: { status: "DOCTOR_EXAMINED" | "CANCELLED" }
    */
-  @Patch('appointments/:id/status')
+  @Patch('visits/:visitId/status')
   @HttpCode(HttpStatus.OK)
-  async updateAppointmentStatus(
+  async updateVisitStatus(
     @Req() request: Request,
-    @Param('id') appointmentId: string,
-    @Body() dto: UpdateAppointmentStatusDto,
+    @Param('visitId') visitId: string,
+    @Body() dto: UpdateDoctorVisitStatusDto,
   ) {
     const user = (request as any).user;
-    return this.doctorPracticeService.updateAppointmentStatus(
+    return this.doctorPracticeService.updateVisitStatus(
       user.id,
-      appointmentId,
+      visitId,
       dto,
     );
   }

@@ -221,14 +221,15 @@ export class NurseDashboardService {
   }
 
   /**
-   * Save the assessment and automatically advance the visit to NURSE_CHECKED.
-   * Both operations are committed or rolled back together.
+   * Save the assessment, advance the visit to NURSE_CHECKED, and confirm
+   * the appointment linked through the visit's one-to-one relationship.
+   * All operations are committed or rolled back together.
    */
   async createNursingAssessment(dto: CreateNursingAssessmentDto) {
     return this.db.$transaction(async (tx: any) => {
       const visit = await tx.visit.findUnique({
         where: { id: dto.visitId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, appoinment_id: true },
       });
 
       if (!visit) {
@@ -262,6 +263,11 @@ export class NurseDashboardService {
       if (updatedVisits.count !== 1) {
         throw new ConflictException('Status kunjungan berubah sebelum disimpan');
       }
+
+      await tx.doctorAppoinment.update({
+        where: { id: visit.appoinment_id },
+        data: { status: 'CONFIRMED' },
+      });
 
       return {
         statusCode: 201,
