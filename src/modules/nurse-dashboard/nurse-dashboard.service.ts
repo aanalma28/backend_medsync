@@ -1,10 +1,13 @@
 import {
+  BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { CreateNursingAssessmentDto } from './dto/create-nursing-assessment.dto.js';
+import { UpdateVisitStatusDto } from './dto/update-visit-status.dto.js';
 
 @Injectable()
 export class NurseDashboardService {
@@ -14,9 +17,133 @@ export class NurseDashboardService {
     return this.prisma as any;
   }
 
+  /**
+   * Resolve hospital membership from the authenticated user.
+   * Never accept the hospital ID from the client for access scoping.
+   */
+  private async resolveNurseHospitalId(userId: string): Promise<string> {
+    if (!userId) {
+      throw new ForbiddenException('Identitas perawat tidak ditemukan');
+    }
+
+    const employee = await this.db.employee.findUnique({
+      where: { user_id: userId },
+      select: {
+        departmen: {
+          select: {
+            hospital_id: true,
+          },
+        },
+      },
+    });
+
+    const hospitalId = employee?.departmen?.hospital_id;
+
+    if (!hospitalId) {
+      throw new ForbiddenException(
+        'Data rumah sakit perawat tidak ditemukan. Pastikan akun Anda terhubung dengan data karyawan dan departemen.',
+      );
+    }
+
+    return hospitalId;
+  }
+
+  /**
+   * Return all visits associated with the nurse's hospital.
+   *
+   * Hospital attribution follows:
+   * Visit -> appointment -> slot -> practice -> doctor -> department.
+   *
+   * This uses the doctor's current department because Visit does not
+   * store a historical hospital ID.
+   */
+  async findPatientHistory(userId: string) {
+    const hospitalId = await this.resolveNurseHospitalId(userId);
+
+    const visits = await this.db.visit.findMany({
+      where: {
+        appoinment: {
+          slotPractice: {
+            practice: {
+              doctor: {
+                is: {
+                  departmen: {
+                    hospital_id: hospitalId,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        createdAt: true,
+        complaint: true,
+        status: true,
+        patient: {
+          select: {
+            id: true,
+            medical_record_number: true,
+            name: true,
+            gender: true,
+            age: true,
+          },
+        },
+        nursingRecord: {
+          select: {
+            sistolic: true,
+            diastolic: true,
+            temperature: true,
+            heart_rate: true,
+            weight: true,
+            height: true,
+            notes: true,
+          },
+        },
+      },
+    });
+
+    return {
+      statusCode: 200,
+      message: 'Berhasil mengambil riwayat pasien',
+      data: {
+        visits: visits.map((visit: any) => ({
+          visitId: visit.id,
+          date: visit.createdAt,
+          complaint: visit.complaint,
+          status: visit.status,
+          patient: {
+            id: visit.patient.id,
+            medicalRecordNumber: visit.patient.medical_record_number,
+            name: visit.patient.name,
+            gender: visit.patient.gender,
+            age: visit.patient.age,
+          },
+          nursingAssessment: visit.nursingRecord
+            ? {
+                systolic: visit.nursingRecord.sistolic,
+                diastolic: visit.nursingRecord.diastolic,
+                temperature: visit.nursingRecord.temperature,
+                heartRate: visit.nursingRecord.heart_rate,
+                weight: visit.nursingRecord.weight,
+                height: visit.nursingRecord.height,
+                notes: visit.nursingRecord.notes,
+              }
+            : null,
+        })),
+      },
+    };
+  }
+
   async findTodayQueue() {
     const today = new Date();
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const startOfDay = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate(),
+    );
     const startOfTomorrow = new Date(
       today.getFullYear(),
       today.getMonth(),
@@ -93,6 +220,10 @@ export class NurseDashboardService {
     };
   }
 
+  /**
+   * Save the assessment and automatically advance the visit to NURSE_CHECKED.
+   * Both operations are committed or rolled back together.
+   */
   async createNursingAssessment(dto: CreateNursingAssessmentDto) {
     return this.db.$transaction(async (tx: any) => {
       const visit = await tx.visit.findUnique({
@@ -138,5 +269,72 @@ export class NurseDashboardService {
         data: { visitId: dto.visitId, status: 'NURSE_CHECKED', assessment },
       };
     });
+  }
+
+  /**
+   * Manual nurse status updates only allow cancellation.
+   * NURSE_CHECKED is set exclusively by assessment creation in this service.
+   * Calling a patient must not change the visit status.
+   */
+  async updateVisitStatus(visitId: string, dto: UpdateVisitStatusDto) {
+    // Enforce the restriction even when called without HTTP DTO validation.
+    if (dto.status !== 'CANCELLED') {
+      throw new BadRequestException(
+        'Perawat hanya dapat mengubah status secara manual menjadi CANCELLED',
+      );
+    }
+
+    const visit = await this.db.visit.findUnique({
+      where: { id: visitId },
+      select: {
+        id: true,
+        patient_id: true,
+        status: true,
+      },
+    });
+
+    if (!visit) {
+      throw new NotFoundException('Kunjungan pasien tidak ditemukan');
+    }
+
+    const cancellableStatuses: readonly string[] = [
+      'REGISTERED',
+      'NURSE_CHECKED',
+      'DOCTOR_EXAMINED',
+    ];
+
+    if (!cancellableStatuses.includes(visit.status)) {
+      throw new ConflictException(
+        `Kunjungan dengan status ${visit.status} tidak dapat dibatalkan`,
+      );
+    }
+
+    // Compare and update atomically so concurrent status changes are not lost.
+    const updatedVisits = await this.db.visit.updateMany({
+      where: {
+        id: visitId,
+        status: visit.status,
+      },
+      data: {
+        status: 'CANCELLED',
+      },
+    });
+
+    if (updatedVisits.count !== 1) {
+      throw new ConflictException(
+        'Data kunjungan berubah sebelum disimpan. Silakan muat ulang data dan coba kembali.',
+      );
+    }
+
+    return {
+      statusCode: 200,
+      message: 'Kunjungan pasien berhasil dibatalkan',
+      data: {
+        visitId,
+        patientId: visit.patient_id,
+        previousStatus: visit.status,
+        status: 'CANCELLED',
+      },
+    };
   }
 }
