@@ -11,6 +11,7 @@ import { QueryPracticeDto } from './dto/query-practice.dto.js';
 import { QueryPatientHistoryDto } from './dto/query-patient-history.dto.js';
 import { ToggleSlotActiveDto, UpdateSlotStatusDto } from './dto/update-slot.dto.js';
 import { UpdateDoctorVisitStatusDto } from './dto/update-visit-status.dto.js';
+import { CreateDoctorExaminationDto } from './dto/create-doctor-examination.dto.js';
 
 @Injectable()
 export class DoctorPracticeService {
@@ -39,6 +40,21 @@ export class DoctorPracticeService {
     }
 
     return employee.id;
+  }
+
+  /**
+   * Generate a transaction number when the client does not provide one.
+   * Format: TRX-YYYYMMDD-HHmmss-<random>
+   */
+  private generateNoTrx(): string {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+    const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const rand = Math.floor(Math.random() * 10000)
+      .toString()
+      .padStart(4, '0');
+    return `TRX-${date}-${time}-${rand}`;
   }
 
   // ─────────────────────────────────────────────
@@ -766,6 +782,202 @@ export class DoctorPracticeService {
         visitId,
         previousStatus: visit.status,
         status: dto.status,
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────
+  // 8. Create Doctor Examination (SOAP + Prescription)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Record a doctor examination in one atomic transaction:
+   *  1. Upsert DoctorAssesment (SOAP + doctorNotes) keyed on visit_id.
+   *  2. Upsert DoctorRecipe (visit_id, no_trx, doctor_id, patient_id,
+   *     pharmacist_id=null, recipe_date_exec, take_med_date,
+   *     status=PENDING, match_product_recipe=null, verify_notes=null).
+   *  3. Replace RecipeDetail rows for that recipe with the submitted
+   *     product_id[] + rules_using[] pairs.
+   *  4. Advance Visit.status to DOCTOR_EXAMINED.
+   *
+   * The visit must belong to the logged-in doctor's practice.
+   */
+  async createDoctorExamination(
+    userId: string,
+    dto: CreateDoctorExaminationDto,
+  ) {
+    const employeeId = await this.resolveEmployeeId(userId);
+
+    // Verify visit exists and belongs to this doctor
+    const visit = await this.db.visit.findUnique({
+      where: { id: dto.visitId },
+      select: {
+        id: true,
+        status: true,
+        patient_id: true,
+        appoinment: {
+          select: {
+            slotPractice: {
+              select: {
+                practice: {
+                  select: { doctor_id: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!visit) {
+      throw new NotFoundException('Kunjungan pasien tidak ditemukan');
+    }
+
+    if (visit.appoinment.slotPractice.practice.doctor_id !== employeeId) {
+      throw new ForbiddenException(
+        'Anda tidak memiliki akses untuk mencatat pemeriksaan pada kunjungan ini',
+      );
+    }
+
+    if (visit.status === 'CANCELLED' || visit.status === 'COMPLETED') {
+      throw new ConflictException(
+        `Kunjungan dengan status ${visit.status} tidak dapat diperiksa`,
+      );
+    }
+
+    // Validate all product_ids exist before starting the transaction
+    const productIds = dto.details.map((d) => d.product_id);
+    const products = await this.db.products.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true },
+    });
+
+    const foundIds = new Set(products.map((p: any) => p.id));
+    const missing = productIds.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Produk tidak ditemukan: ${missing.join(', ')}`,
+      );
+    }
+
+    const noTrx = dto.no_trx || this.generateNoTrx();
+    const recipeDateExec = dto.recipe_date_exec
+      ? new Date(dto.recipe_date_exec)
+      : new Date();
+    const takeMedDate = dto.take_med_date ? new Date(dto.take_med_date) : null;
+
+    const result = await this.db.$transaction(async (tx: any) => {
+      // 1. Upsert SOAP assessment
+      const assessment = await tx.doctorAssesment.upsert({
+        where: { visit_id: dto.visitId },
+        create: {
+          visit_id: dto.visitId,
+          doctor_id: employeeId,
+          subjective: dto.subjective ?? null,
+          objective: dto.objective ?? null,
+          assessment: dto.assessment ?? null,
+          plan: dto.plan ?? null,
+          doctorNotes: dto.doctorNotes ?? null,
+        },
+        update: {
+          doctor_id: employeeId,
+          subjective: dto.subjective ?? null,
+          objective: dto.objective ?? null,
+          assessment: dto.assessment ?? null,
+          plan: dto.plan ?? null,
+          doctorNotes: dto.doctorNotes ?? null,
+        },
+      });
+
+      // 2. Upsert the prescription header
+      const recipe = await tx.doctorRecipe.upsert({
+        where: { visit_id: dto.visitId },
+        create: {
+          visit_id: dto.visitId,
+          no_trx: noTrx,
+          recipe_date_exec: recipeDateExec,
+          patient_id: visit.patient_id,
+          doctor_id: employeeId,
+          pharmacist_id: null,
+          status: 'PENDING',
+          take_med_date: takeMedDate,
+          match_product_recipe: null,
+          verify_notes: null,
+        },
+        update: {
+          no_trx: noTrx,
+          recipe_date_exec: recipeDateExec,
+          patient_id: visit.patient_id,
+          doctor_id: employeeId,
+        },
+      });
+
+      // 3. Replace recipe details
+      await tx.recipeDetail.deleteMany({
+        where: { recipe_id: recipe.id },
+      });
+
+      await tx.recipeDetail.createMany({
+        data: dto.details.map((detail) => ({
+          recipe_id: recipe.id,
+          product_id: detail.product_id,
+          rules_using: detail.rules_using,
+        })),
+      });
+
+      // 4. Advance visit status atomically (compare-and-set)
+      const updatedVisits = await tx.visit.updateMany({
+        where: {
+          id: dto.visitId,
+          status: { in: ['REGISTERED', 'NURSE_CHECKED'] },
+        },
+        data: { status: 'DOCTOR_EXAMINED' },
+      });
+
+      if (updatedVisits.count !== 1) {
+        throw new ConflictException(
+          'Status kunjungan berubah sebelum disimpan. Silakan muat ulang data dan coba kembali.',
+        );
+      }
+
+      const fullRecipe = await tx.doctorRecipe.findUnique({
+        where: { id: recipe.id },
+        include: {
+          recipeDetails: {
+            include: {
+              product: {
+                select: { id: true, name: true, unit: true },
+              },
+            },
+          },
+        },
+      });
+
+      return { assessment, recipe: fullRecipe };
+    });
+
+    return {
+      statusCode: 201,
+      message: 'Pemeriksaan dokter dan resep berhasil disimpan',
+      data: {
+        visitId: dto.visitId,
+        status: 'DOCTOR_EXAMINED',
+        doctorAssesment: result.assessment,
+        recipe: {
+          id: result.recipe.id,
+          no_trx: result.recipe.no_trx,
+          recipe_date_exec: result.recipe.recipe_date_exec,
+          take_med_date: result.recipe.take_med_date,
+          status: result.recipe.status,
+          match_product_recipe: result.recipe.match_product_recipe,
+          verify_notes: result.recipe.verify_notes,
+          details: result.recipe.recipeDetails.map((d: any) => ({
+            product_id: d.product_id,
+            product_name: d.product?.name ?? null,
+            unit: d.product?.unit ?? null,
+            rules_using: d.rules_using,
+          })),
+        },
       },
     };
   }

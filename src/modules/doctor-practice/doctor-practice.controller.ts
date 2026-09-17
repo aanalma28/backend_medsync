@@ -16,6 +16,7 @@ import { QueryPracticeDto } from './dto/query-practice.dto.js';
 import { QueryPatientHistoryDto } from './dto/query-patient-history.dto.js';
 import { ToggleSlotActiveDto, UpdateSlotStatusDto } from './dto/update-slot.dto.js';
 import { UpdateDoctorVisitStatusDto } from './dto/update-visit-status.dto.js';
+import { CreateDoctorExaminationDto } from './dto/create-doctor-examination.dto.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import type { Request } from 'express';
 
@@ -139,5 +140,26 @@ export class DoctorPracticeController {
       visitId,
       dto,
     );
+  }
+
+  /**
+   * POST /doctor/practice/examinations
+   * Record a doctor examination: SOAP assessment + prescription (header + details).
+   * Body:
+   * {
+   *   visitId,
+   *   subjective?, objective?, assessment?, plan?, doctorNotes?,
+   *   no_trx?, recipe_date_exec?, take_med_date?,
+   *   details: [{ product_id, rules_using }]
+   * }
+   */
+  @Post('examinations')
+  @HttpCode(HttpStatus.CREATED)
+  async createExamination(
+    @Req() request: Request,
+    @Body() dto: CreateDoctorExaminationDto,
+  ) {
+    const user = (request as any).user;
+    return this.doctorPracticeService.createDoctorExamination(user.id, dto);
   }
 }
