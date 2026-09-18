@@ -30,7 +30,7 @@ export class CreateRecipeDetailDto {
 export class CreateDoctorExaminationDto {
   @IsString({ message: 'visitId harus berupa string' })
   @IsNotEmpty({ message: 'visitId tidak boleh kosong' })
-  visitId: string;
+  visitId?: string;
 
   // ===== SOAP =====
   @IsOptional()

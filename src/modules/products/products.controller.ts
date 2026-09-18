@@ -26,7 +26,13 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
  * Prefix: /products
  */
 @Controller('products')
-@Roles('PHARMACIST', 'SUPERADMIN', 'MASTERADMIN')
+@Roles(
+  'PHARMACIST',
+  'SUPERADMIN',
+  'MASTERADMIN',
+  'GENERAL_DOCTOR',
+  'SPECIALIST_DOCTOR',
+)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
@@ -36,8 +42,9 @@ export class ProductsController {
    */
   @Get()
   @HttpCode(HttpStatus.OK)
-  async findAll(@Query() queryDto: QueryProductDto) {
-    return this.productsService.findAllProducts(queryDto);
+  async findAll(@Query() queryDto: QueryProductDto, @Req() request: Request) {
+    const user = (request as any).user;
+    return this.productsService.findAllProducts(queryDto, user.id);
   }
 
   /**

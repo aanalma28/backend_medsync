@@ -24,7 +24,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
  * Prefix: /prescriptions
  */
 @Controller('prescriptions')
-@Roles('PHARMACIST', 'APOTHEKER', 'SUPERADMIN', 'MASTERADMIN')
+@Roles('PHARMACIST', 'APOTEKER', 'SUPERADMIN', 'MASTERADMIN')
 export class PrescriptionsController {
   constructor(private readonly productsService: ProductsService) {}
 

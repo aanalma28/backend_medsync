@@ -41,71 +41,141 @@ export class ProductsService {
   /**
    * Get all products with search, category filtering, stock status filters, and pagination.
    */
-  async findAllProducts(queryDto: QueryProductDto) {
+  async findAllProducts(queryDto: QueryProductDto, userId: string) {
     const page = Number(queryDto.page) || 1;
     const limit = Number(queryDto.limit) || 10;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
-
-    // Search filter (code or name)
-    if (queryDto.search && queryDto.search.trim() !== '') {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { code: { contains: search, mode: 'insensitive' } },
-        { name: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    // Category filter
-    if (queryDto.category) {
-      where.category = queryDto.category;
-    }
-
-    // Stock status filter
-    if (queryDto.stock_status) {
-      const status = queryDto.stock_status.toUpperCase();
-      if (status === 'LOW') {
-        where.stock = { lte: 10 };
-      } else if (status === 'OUT') {
-        where.stock = 0;
-      }
-    }
+    // Normalisasi filter dari DTO
+    const search = queryDto.search?.trim() || null;
+    const category = queryDto.category || null;
+    const stockStatus = queryDto.stock_status?.toUpperCase() || null;
 
     const today = new Date();
     const ninetyDaysFromNow = new Date();
     ninetyDaysFromNow.setDate(today.getDate() + 90);
 
-    const [total, items, lowStockCount, outOfStockCount] = await Promise.all([
-      this.db.products.count({ where }),
-      this.db.products.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { name: 'asc' },
-        include: {
-          inventoryLogs: {
-            where: { exp_date: { not: null } },
-            orderBy: { exp_date: 'asc' },
-            take: 1,
-            select: {
-              exp_date: true,
-              supplierName: true,
-            },
-          },
-        },
-      }),
-      this.db.products.count({
-        where: {
-          stock: { lte: 10 },
-        },
-      }),
-      this.db.products.count({
-        where: { stock: 0 },
-      }),
-    ]);
+    // 1. RAW SQL UTAMA: Mengambil produk berdasarkan hospital_id di InventoryLogs
+    // Menggunakan UNION di target_hospital agar aman untuk Employee (Dokter) maupun Owner/Superadmin
+    const items: any[] = await this.db.$queryRaw`
+      WITH target_hospital AS (
+        -- Jalur 1: Jika user adalah Employee (Dokter, Perawat, dll)
+        SELECT h."id" AS "hospitalId"
+        FROM "User" u
+        JOIN "Employee" e ON u."id" = e."user_id"
+        JOIN "Departmen" d ON e."departmen_id" = d."id"
+        JOIN "Hospital" h ON d."hospital_id" = h."id"
+        WHERE u."id" = ${userId}
+        
+        UNION
+        
+        -- Jalur 2: Jika user adalah Owner / Superadmin yang terikat langsung ke Hospital
+        SELECT h."id" AS "hospitalId"
+        FROM "Hospital" h
+        WHERE h."user_id" = ${userId}
+      ),
+      filtered_products AS (
+        SELECT DISTINCT ON (p."id") 
+          p.*, 
+          il."exp_date", 
+          il."supplierName"
+        FROM "Products" p
+        JOIN "InventoryLogs" il ON p."id" = il."product_id"
+        JOIN target_hospital th ON il."hospital_id" = th."hospitalId"
+        WHERE 
+          (${search}::text IS NULL OR p."code" ILIKE ${'%' + search + '%'} OR p."name" ILIKE ${'%' + search + '%'})
+          AND (${category}::text IS NULL OR p."category"::text = ${category})
+          AND (
+            ${stockStatus}::text IS NULL 
+            OR (${stockStatus} = 'LOW' AND p."stock" <= 10)
+            OR (${stockStatus} = 'OUT' AND p."stock" = 0)
+          )
+        ORDER BY p."id", il."exp_date" ASC NULLS LAST
+      )
+      SELECT * FROM filtered_products
+      ORDER BY "name" ASC
+      LIMIT ${limit} OFFSET ${skip};
+    `;
 
-    // Format products response with status indicators
+    // 2. RAW SQL UNTUK TOTAL COUNT (Keperluan Metadata Pagination)
+    const totalResult: any[] = await this.db.$queryRaw`
+      WITH target_hospital AS (
+        SELECT h."id" AS "hospitalId"
+        FROM "User" u
+        JOIN "Employee" e ON u."id" = e."user_id"
+        JOIN "Departmen" d ON e."departmen_id" = d."id"
+        JOIN "Hospital" h ON d."hospital_id" = h."id"
+        WHERE u."id" = ${userId}
+        
+        UNION
+        
+        SELECT h."id" AS "hospitalId"
+        FROM "Hospital" h
+        WHERE h."user_id" = ${userId}
+      )
+      SELECT COUNT(DISTINCT p."id") as total
+      FROM "Products" p
+      JOIN "InventoryLogs" il ON p."id" = il."product_id"
+      JOIN target_hospital th ON il."hospital_id" = th."hospitalId"
+      WHERE 
+        (${search}::text IS NULL OR p."code" ILIKE ${'%' + search + '%'} OR p."name" ILIKE ${'%' + search + '%'})
+        AND (${category}::text IS NULL OR p."category"::text = ${category})
+        AND (
+          ${stockStatus}::text IS NULL 
+          OR (${stockStatus} = 'LOW' AND p."stock" <= 10)
+          OR (${stockStatus} = 'OUT' AND p."stock" = 0)
+        );
+    `;
+    const total = Number(totalResult[0]?.total || 0);
+
+    // 3. RAW SQL UNTUK SUMMARY (Total Low Stock & Out of Stock di Rumah Sakit tersebut)
+    const lowStockResult: any[] = await this.db.$queryRaw`
+      WITH target_hospital AS (
+        SELECT h."id" AS "hospitalId"
+        FROM "User" u
+        JOIN "Employee" e ON u."id" = e."user_id"
+        JOIN "Departmen" d ON e."departmen_id" = d."id"
+        JOIN "Hospital" h ON d."hospital_id" = h."id"
+        WHERE u."id" = ${userId}
+        
+        UNION
+        
+        SELECT h."id" AS "hospitalId"
+        FROM "Hospital" h
+        WHERE h."user_id" = ${userId}
+      )
+      SELECT COUNT(DISTINCT p."id") as count
+      FROM "Products" p
+      JOIN "InventoryLogs" il ON p."id" = il."product_id"
+      JOIN target_hospital th ON il."hospital_id" = th."hospitalId"
+      WHERE p."stock" <= 10;
+    `;
+    const lowStockCount = Number(lowStockResult[0]?.count || 0);
+
+    const outOfStockResult: any[] = await this.db.$queryRaw`
+      WITH target_hospital AS (
+        SELECT h."id" AS "hospitalId"
+        FROM "User" u
+        JOIN "Employee" e ON u."id" = e."user_id"
+        JOIN "Departmen" d ON e."departmen_id" = d."id"
+        JOIN "Hospital" h ON d."hospital_id" = h."id"
+        WHERE u."id" = ${userId}
+        
+        UNION
+        
+        SELECT h."id" AS "hospitalId"
+        FROM "Hospital" h
+        WHERE h."user_id" = ${userId}
+      )
+      SELECT COUNT(DISTINCT p."id") as count
+      FROM "Products" p
+      JOIN "InventoryLogs" il ON p."id" = il."product_id"
+      JOIN target_hospital th ON il."hospital_id" = th."hospitalId"
+      WHERE p."stock" = 0;
+    `;
+    const outOfStockCount = Number(outOfStockResult[0]?.count || 0);
+
+    // 4. MAPPING RESPONSE (Format data seperti sedia kala)
     const formattedProducts = items.map((product: any) => {
       const isLowStock = product.stock <= product.min_stock;
       const isOutOfStock = product.stock === 0;
@@ -117,8 +187,7 @@ export class ProductsService {
         status = 'LOW_STOCK';
       }
 
-      const latestLog = product.inventoryLogs?.[0];
-      const expDate = latestLog?.exp_date ? new Date(latestLog.exp_date) : null;
+      const expDate = product.exp_date ? new Date(product.exp_date) : null;
       const isNearExpiry = expDate ? expDate <= ninetyDaysFromNow && expDate >= today : false;
 
       return {
@@ -137,11 +206,13 @@ export class ProductsService {
         is_out_of_stock: isOutOfStock,
         is_near_expiry: isNearExpiry,
         exp_date: expDate,
-        supplierName: latestLog?.supplierName || null,
+        supplierName: product.supplierName || null,
         createdAt: product.createdAt,
         updatedAt: product.updatedAt,
       };
     });
+
+    console.log(formattedProducts);
 
     return {
       statusCode: 200,

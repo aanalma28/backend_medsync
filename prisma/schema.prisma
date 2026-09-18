@@ -108,6 +108,7 @@ model Hospital {
   updatedAt     DateTime    @updatedAt
 
   hospitalDepartments   Departmen[] @relation("HospitalDepartmens")
+  hospitalInventoryLogs InventoryLogs[] @relation("HospitalInventoryLogs")
 }
 
 model Departmen {
@@ -182,6 +183,8 @@ model Products {
 
 model InventoryLogs {
   id                 String   @id @default(cuid())
+  hospital           Hospital @relation("HospitalInventoryLogs", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id        String
   product            Products @relation("ProductInventoryLogs", fields: [product_id], references: [id], onDelete: Restrict)
   product_id         String
   type               String
