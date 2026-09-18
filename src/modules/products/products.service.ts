@@ -212,8 +212,6 @@ export class ProductsService {
       };
     });
 
-    console.log(formattedProducts);
-
     return {
       statusCode: 200,
       message: 'Berhasil mengambil daftar katalog produk',

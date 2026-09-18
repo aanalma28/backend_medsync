@@ -4,35 +4,33 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsDate,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
- * A single prescribed medicine line.
- * product_id references Products.id and rules_using holds
- * the instruction text (e.g. "3x1 sehari setelah makan").
+ * Detail obat / item resep yang dikirim dari frontend medicines
  */
 export class CreateRecipeDetailDto {
   @IsString({ message: 'product_id harus berupa string' })
   @IsNotEmpty({ message: 'product_id tidak boleh kosong' })
-  product_id: string;
+  id: string;
+
+  @IsString({ message: 'Nama harus berupa string' })
+  @IsOptional()
+  name?: string;
 
   @IsString({ message: 'rules_using harus berupa string' })
   @IsNotEmpty({ message: 'Aturan pemakaian tidak boleh kosong' })
-  rules_using: string;
+  usage: string;
 }
 
 /**
- * Payload for recording a doctor examination.
- * Combines SOAP notes (DoctorAssesment) and the prescription (DoctorRecipe + RecipeDetail).
+ * Representasi objek doctorCheck dari frontend snapshot.
+ * Menampung asesmen medis (SOAP).
  */
-export class CreateDoctorExaminationDto {
-  @IsString({ message: 'visitId harus berupa string' })
-  @IsNotEmpty({ message: 'visitId tidak boleh kosong' })
-  visitId?: string;
-
-  // ===== SOAP =====
+export class DoctorCheckDto {
   @IsOptional()
   @IsString()
   subjective?: string;
@@ -41,9 +39,15 @@ export class CreateDoctorExaminationDto {
   @IsString()
   objective?: string;
 
+  // Menampung assessment standar
   @IsOptional()
   @IsString()
   assessment?: string;
+
+  // Menampung variasi ejaan/typo 'assesment' (dua huruf 's') yang dikirim frontend
+  @IsOptional()
+  @IsString()
+  assesment?: string;
 
   @IsOptional()
   @IsString()
@@ -51,24 +55,49 @@ export class CreateDoctorExaminationDto {
 
   @IsOptional()
   @IsString()
-  doctorNotes?: string;
+  notes?: string;
+}
 
-  // ===== Prescription =====
+/**
+ * Representasi objek snapshot (Receipt) yang dikirim dari frontend
+ */
+export class ExaminationSnapshotDto {
+  @IsString({ message: 'visitId harus berupa string' })
+  @IsNotEmpty({ message: 'visitId tidak boleh kosong' })
+  visitId?: string;
+
   @IsOptional()
-  @IsString({ message: 'no_trx harus berupa string' })
-  no_trx?: string;
+  @IsString()
+  patientName?: string;
 
   @IsOptional()
-  @IsString({ message: 'recipe_date_exec harus berupa string ISO date' })
-  recipe_date_exec?: string;
+  @IsString()
+  patientId?: string;
 
   @IsOptional()
-  @IsString({ message: 'take_med_date harus berupa string ISO date' })
-  take_med_date?: string;
+  @IsString()
+  doctorName?: string;
 
-  @IsArray({ message: 'details harus berupa array' })
+  @IsOptional()
+  @IsString()
+  date?: string;
+
+  @ValidateNested()
+  @Type(() => DoctorCheckDto)
+  doctorCheck: DoctorCheckDto;
+
+  @IsArray({ message: 'medicines harus berupa array' })
   @ArrayMinSize(1, { message: 'Minimal harus ada 1 obat dalam resep' })
   @ValidateNested({ each: true })
   @Type(() => CreateRecipeDetailDto)
-  details: CreateRecipeDetailDto[];
+  medicines: CreateRecipeDetailDto[];
+}
+
+/**
+ * Payload utama untuk pencatatan pemeriksaan dokter
+ */
+export class CreateDoctorExaminationDto {
+  @ValidateNested()
+  @Type(() => ExaminationSnapshotDto)
+  snapshot: ExaminationSnapshotDto;
 }

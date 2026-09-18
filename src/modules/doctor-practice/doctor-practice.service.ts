@@ -11,11 +11,14 @@ import { QueryPracticeDto } from './dto/query-practice.dto.js';
 import { QueryPatientHistoryDto } from './dto/query-patient-history.dto.js';
 import { ToggleSlotActiveDto, UpdateSlotStatusDto } from './dto/update-slot.dto.js';
 import { UpdateDoctorVisitStatusDto } from './dto/update-visit-status.dto.js';
-import { CreateDoctorExaminationDto } from './dto/create-doctor-examination.dto.js';
+import {
+  CreateDoctorExaminationDto,
+  CreateRecipeDetailDto,
+} from './dto/create-doctor-examination.dto.js';
 
 @Injectable()
 export class DoctorPracticeService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   // Helper cast for Prisma client access
   private get db() {
@@ -573,6 +576,7 @@ export class DoctorPracticeService {
         slot_name: history.appoinment.slotPractice?.name,
         doctor_assesment: history.doctorRecord
           ? {
+            subjective: history.doctorRecord.subjective,
             objective: history.doctorRecord.objective,
             assesment: history.doctorRecord.assessment,
             plan: history.doctorRecord.plan,
@@ -810,7 +814,7 @@ export class DoctorPracticeService {
 
     // Verify visit exists and belongs to this doctor
     const visit = await this.db.visit.findUnique({
-      where: { id: dto.visitId },
+      where: { id: dto.snapshot.visitId },
       select: {
         id: true,
         status: true,
@@ -846,7 +850,7 @@ export class DoctorPracticeService {
     }
 
     // Validate all product_ids exist before starting the transaction
-    const productIds = dto.details.map((d) => d.product_id);
+    const productIds = dto.snapshot.medicines.map((d) => d.id);
     const products = await this.db.products.findMany({
       where: { id: { in: productIds } },
       select: { id: true },
@@ -860,47 +864,46 @@ export class DoctorPracticeService {
       );
     }
 
-    const noTrx = dto.no_trx || this.generateNoTrx();
-    const recipeDateExec = dto.recipe_date_exec
-      ? new Date(dto.recipe_date_exec)
+    const noTrx = this.generateNoTrx();
+    const recipeDateExec = dto.snapshot.date
+      ? new Date(dto.snapshot.date)
       : new Date();
-    const takeMedDate = dto.take_med_date ? new Date(dto.take_med_date) : null;
 
     const result = await this.db.$transaction(async (tx: any) => {
       // 1. Upsert SOAP assessment
-      const assessment = await tx.doctorAssesment.upsert({
-        where: { visit_id: dto.visitId },
+      const assesment = await tx.doctorAssesment.upsert({
+        where: { visit_id: dto.snapshot.visitId },
         create: {
-          visit_id: dto.visitId,
+          visit_id: dto.snapshot.visitId,
           doctor_id: employeeId,
-          subjective: dto.subjective ?? null,
-          objective: dto.objective ?? null,
-          assessment: dto.assessment ?? null,
-          plan: dto.plan ?? null,
-          doctorNotes: dto.doctorNotes ?? null,
+          subjective: dto.snapshot.doctorCheck.subjective ?? null,
+          objective: dto.snapshot.doctorCheck.objective ?? null,
+          assessment: dto.snapshot.doctorCheck.assesment ?? null,
+          plan: dto.snapshot.doctorCheck.plan ?? null,
+          doctorNotes: dto.snapshot.doctorCheck.notes ?? null,
         },
         update: {
           doctor_id: employeeId,
-          subjective: dto.subjective ?? null,
-          objective: dto.objective ?? null,
-          assessment: dto.assessment ?? null,
-          plan: dto.plan ?? null,
-          doctorNotes: dto.doctorNotes ?? null,
+          subjective: dto.snapshot.doctorCheck.subjective ?? null,
+          objective: dto.snapshot.doctorCheck.objective ?? null,
+          assessment: dto.snapshot.doctorCheck.assesment ?? null,
+          plan: dto.snapshot.doctorCheck.plan ?? null,
+          doctorNotes: dto.snapshot.doctorCheck.notes ?? null,
         },
       });
 
       // 2. Upsert the prescription header
       const recipe = await tx.doctorRecipe.upsert({
-        where: { visit_id: dto.visitId },
+        where: { visit_id: dto.snapshot.visitId },
         create: {
-          visit_id: dto.visitId,
+          visit_id: dto.snapshot.visitId,
           no_trx: noTrx,
           recipe_date_exec: recipeDateExec,
           patient_id: visit.patient_id,
           doctor_id: employeeId,
           pharmacist_id: null,
           status: 'PENDING',
-          take_med_date: takeMedDate,
+          take_med_date: null,
           match_product_recipe: null,
           verify_notes: null,
         },
@@ -918,17 +921,17 @@ export class DoctorPracticeService {
       });
 
       await tx.recipeDetail.createMany({
-        data: dto.details.map((detail) => ({
+        data: dto.snapshot.medicines.map((detail) => ({
           recipe_id: recipe.id,
-          product_id: detail.product_id,
-          rules_using: detail.rules_using,
+          product_id: detail.id,
+          rules_using: detail.usage,
         })),
       });
 
       // 4. Advance visit status atomically (compare-and-set)
       const updatedVisits = await tx.visit.updateMany({
         where: {
-          id: dto.visitId,
+          id: dto.snapshot.visitId,
           status: { in: ['REGISTERED', 'NURSE_CHECKED'] },
         },
         data: { status: 'DOCTOR_EXAMINED' },
@@ -953,14 +956,14 @@ export class DoctorPracticeService {
         },
       });
 
-      return { assessment, recipe: fullRecipe };
+      return { assesment, recipe: fullRecipe };
     });
 
     return {
       statusCode: 201,
       message: 'Pemeriksaan dokter dan resep berhasil disimpan',
       data: {
-        visitId: dto.visitId,
+        visitId: dto.snapshot.visitId,
         status: 'DOCTOR_EXAMINED',
         doctorAssesment: result.assessment,
         recipe: {
