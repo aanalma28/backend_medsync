@@ -990,6 +990,7 @@ export class ProductsService {
             buy_price: product.buy_price,
             user_id: userId,
             notes: `Pemotongan resep no. ${recipe.no_trx} untuk pasien ${recipe.patient?.user?.name || ''}`,
+            hospital_id: pharmacistHospitalId,
           },
         });
 
@@ -1013,7 +1014,29 @@ export class ProductsService {
           verify_notes: dto.verify_notes || 'Resep terverifikasi oleh Apoteker dan dosis sesuai',
           match_product_recipe: dto.match_product_recipe ?? true,
         },
+        include: {
+          visit: {
+            select: {
+              id: true,
+              appoinment_id: true,
+            }
+          }
+        }
       });
+
+      // Update status Visit menjadi 'COMPLETED'
+      await tx.visit.update({
+        where: { id: updatedRecipe.visit_id },
+        data: { status: 'COMPLETED' },
+      });
+
+      // Update status DoctorAppoinment menjadi 'COMPLETED'
+      if (updatedRecipe.visit?.appoinment_id) {
+        await tx.doctorAppoinment.update({
+          where: { id: updatedRecipe.visit.appoinment_id },
+          data: { status: 'COMPLETED' },
+        });
+      }
 
       return {
         statusCode: 200,

@@ -183,8 +183,8 @@ model Products {
 
 model InventoryLogs {
   id                 String   @id @default(cuid())
-  hospital           Hospital @relation("HospitalInventoryLogs", fields: [hospital_id], references: [id], onDelete: Restrict)
-  hospital_id        String
+  hospital           Hospital? @relation("HospitalInventoryLogs", fields: [hospital_id], references: [id], onDelete: SetNull)
+  hospital_id        String?
   product            Products @relation("ProductInventoryLogs", fields: [product_id], references: [id], onDelete: Restrict)
   product_id         String
   type               String
