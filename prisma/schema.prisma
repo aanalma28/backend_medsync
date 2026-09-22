@@ -74,6 +74,12 @@ enum Gender {
   PEREMPUAN
 }
 
+enum Severity {
+  MILD
+  MODERATE
+  SEVERE
+}
+
 model User {
   id                     String    @id @default(cuid())  
   name                   String?
@@ -109,6 +115,10 @@ model Hospital {
 
   hospitalDepartments   Departmen[] @relation("HospitalDepartmens")
   hospitalInventoryLogs InventoryLogs[] @relation("HospitalInventoryLogs")
+  hospitalPatientAllergy PatientAllergy[] @relation("HospitalPatientAllergy")
+  hospitalProducts      Products[] @relation("HospitalProducts")
+  hospitalStockBatch    StockBatch[] @relation("HospitalStockBatch")
+  hospitalWarehouseComponent WarehouseComponent[]  @relation("HospitalWarehouseComponent")
 }
 
 model Departmen {
@@ -142,6 +152,7 @@ model Patient {
   medicalHistories  Visit[] @relation("PatientVisitHistory")
   patientRecipes    DoctorRecipe[]   @relation("PatientRecipes")
   patientAppoinments DoctorAppoinment[] @relation("PatientAppoinments")
+  patientAllergies  PatientAllergy[]  @relation("PatientAllergies")
 }
 
 model Employee {
@@ -158,19 +169,24 @@ model Employee {
   doctorRecipes     DoctorRecipe[]   @relation("DoctorRecipes")
   pharmacistRecipes DoctorRecipe[]   @relation("PharmacistRecipes")
   doctorPractice    DoctorPractice[] @relation("DoctorPractice")
+  employeePatientAllergy PatientAllergy[] @relation("EmployeePatientAllergy")
 }
 
+// ==========================================
+// 1. MASTER KATALOG PRODUK
+// ==========================================
 model Products {
   id          String   @id @default(cuid())
+  hospital    Hospital @relation("HospitalProducts",fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id String
   code        String   @unique
   name        String
   category    Category @default(DRUG)
-  unit        String
-  stock       Int
-  min_stock   Int
+  unit        String  
   buy_price   Float
   sell_price  Float  
-  description String
+
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -179,24 +195,139 @@ model Products {
 
   // Relasi ke InventoryLogs
   inventoryLogs InventoryLogs[] @relation("ProductInventoryLogs")
+
+  stocks      WarehouseStock[] @relation("ProductStocks")
+  batches     StockBatch[] @relation("ProductBatches")  
 }
 
+// ==========================================
+// 2. GUDANG UTAMA / PUSAT LOGISTIK
+// ==========================================
+model Warehouse {
+  id            String               @id @default(cuid())
+  hospital      Hospital             @relation("HospitalWarehouse", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id   String
+  name          String               // Cth: "Gudang Utama Logistik Medis"
+  description   String?
+  
+  components    WarehouseComponent[] @relation("WarehouseComponents")
+  stocks        WarehouseStock[]     @relation("WarehouseStocks")
+  batches       StockBatch[]         @relation("WarehouseBatches")
+  logs          InventoryLogs[]      @relation("WarehouseInventoryLogs")
+  
+  createdAt     DateTime             @default(now())
+}
+
+// ==========================================
+// 3. GUDANG KOMPONEN / DEPO UNIT SATELIT
+// ==========================================
+model WarehouseComponent {
+  id            String               @id @default(cuid())
+  hospital      Hospital             @relation("HospitalWarehouseComponent", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id   String
+  warehouse     Warehouse            @relation("WarehouseComponents", fields: [warehouse_id], references: [id], onDelete: Cascade)
+  warehouse_id  String  
+  name          String               // Cth: "Depo Farmasi Resep", "Apotek Retail RS"
+  type          String               // "PHARMACY_PRESCRIPTION", "PHARMACY_RETAIL", "POLI", "LAB", "IGD"
+  
+  stocks        WarehouseStock[] @relation("WarehouseComponentStocks")
+  batches       StockBatch[]     @relation("WarehouseComponentBatches")
+  logs          InventoryLogs[]  @relation("WarehouseComponentInventoryLogs")
+  
+  createdAt     DateTime             @default(now())
+}
+
+// ==========================================
+// 4. STOK AKTUAL PER LOKASI
+// ==========================================
+model WarehouseStock {
+  id                     String              @id @default(cuid())
+  product                Products            @relation("ProductStocks", fields: [product_id], references: [id], onDelete: Restrict)
+  product_id             String  
+  
+  warehouse              Warehouse?          @relation("WarehouseStocks", fields: [warehouse_id], references: [id], onDelete: Cascade)
+  warehouse_id           String?  
+  
+  warehouseComponent     WarehouseComponent? @relation("WarehouseComponentStocks", fields: [warehouse_component_id], references: [id], onDelete: Cascade)
+  warehouse_component_id String?
+  
+  stock                  Int                 @default(0)
+  min_stock              Int                 @default(5)
+  
+  @@unique([product_id, warehouse_id])
+  @@unique([product_id, warehouse_component_id])
+}
+
+// ==========================================
+// 5. BATCH & KEDALUWARSA (FEFO SUPPORT)
+// ==========================================
+model StockBatch {
+  id                     String              @id @default(cuid())
+  hospital               Hospital            @relation("HospitalStockBatch", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id            String
+  product                Products            @relation("ProductBatches", fields: [product_id], references: [id], onDelete: Cascade)
+  product_id             String
+  
+  warehouse              Warehouse?          @relation("WarehouseBatches", fields: [warehouse_id], references: [id], onDelete: Cascade)
+  warehouse_id           String?
+  
+  warehouseComponent     WarehouseComponent? @relation("WarehouseComponentBatches", fields: [warehouse_component_id], references: [id], onDelete: Cascade)
+  warehouse_component_id String?
+  
+  batch_number           String              // Nomor batch pabrik dari faktur
+  exp_date               DateTime            // Tanggal kedaluwarsa obat
+  initial_stock          Int                 // Jumlah awal batch masuk
+  current_stock          Int                 // Sisa kuantiti aktual batch ini
+  
+  createdAt              DateTime            @default(now())
+}
+
+// ==========================================
+// 6. BUKU BESAR AUDIT MUTASI (INVENTORY LOGS)
+// ==========================================
 model InventoryLogs {
-  id                 String   @id @default(cuid())
-  hospital           Hospital? @relation("HospitalInventoryLogs", fields: [hospital_id], references: [id], onDelete: SetNull)
-  hospital_id        String?
-  product            Products @relation("ProductInventoryLogs", fields: [product_id], references: [id], onDelete: Restrict)
-  product_id         String
-  type               String
-  quantity           Int
-  buy_price          Float
-  exp_date           DateTime?
-  supplierName       String?  
-  reference_number   String?
-  user               User?    @relation("UserWriter", fields: [user_id], references: [id], onDelete: SetNull)
-  user_id            String?
-  notes              String?
-  createdAt          DateTime @default(now())
+  id                     String              @id @default(cuid())
+  hospital               Hospital            @relation("HospitalInventoryLogs", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id            String
+  product                Products            @relation("ProductInventoryLogs", fields: [product_id], references: [id])
+  product_id             String
+  
+  warehouse              Warehouse?          @relation("WarehouseInventoryLogs", fields: [warehouse_id], references: [id])
+  warehouse_id           String?
+  
+  warehouseComponent     WarehouseComponent? @relation("WarehouseComponentInventoryLogs", fields: [warehouse_component_id], references: [id])
+  warehouse_component_id String?
+
+  user                   User?               @relation("UserWriter", fields: [user_id], references: [id])
+  user_id                String?
+  
+  type                   String              // PURCHASE, TRANSFER_OUT, TRANSFER_IN, USAGE, DISPENSE, RETURN
+  quantity               Int                 // Nilai mutasi (+ masuk, - keluar)
+  source_destination     String?             // Keterangan pihak luar (Cth: "PT. Kimia Farma")
+  reference_number       String?             // No PO, No Faktur, No Amprahan, No Resep  
+  notes                  String?
+  
+  createdAt              DateTime            @default(now())
+}
+
+// ==========================================
+// 7. STRUKTUR KLINIS: ALERGI PASIEN
+// ==========================================
+model PatientAllergy {
+  id          String   @id @default(cuid())
+  hospital    Hospital @relation("HospitalPatientAllergy", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id String
+  patient     Patient  @relation("PatientAllergies", fields: [patient_id], references: [id], onDelete: Cascade)
+  patient_id  String   // Relasi ke User / Pasien
+  employee    Employee @relation("EmployeePatientAllergy", fields: [employee_id], references: [id], onDelete: SetNull)
+  employee_id String
+  
+  allergen    String   // Nama obat / golongan pemicu (Cth: Penisilin)
+  severity    Severity @default(MILD)   // MILD (Ringan), MODERATE (Sedang), SEVERE (Berat)
+  reaction    String?  // Deskripsi reaksi (Cth: Ruam & sesak napas)  
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model DoctorPractice {
@@ -324,5 +455,11 @@ model RecipeDetail {
   product    Products     @relation(fields: [product_id], references: [id], onDelete: Restrict)
   product_id String
   
-  rules_using String
+  qty           Int      // Jumlah fisik obat diberikan
+  dosage        String   // Aturan pakai (Cth: 3x1 sesudah makan)
+  duration_days Int      // Lama konsumsi dalam hari (Cth: 10 hari)
+  start_date    DateTime // Tanggal mulai resep
+  end_date      DateTime // Tanggal otomatis habis (start_date + duration_days)
+  
+  createdAt     DateTime @default(now())
 }
