@@ -118,6 +118,7 @@ model Hospital {
   hospitalPatientAllergy PatientAllergy[] @relation("HospitalPatientAllergy")
   hospitalProducts      Products[] @relation("HospitalProducts")
   hospitalStockBatch    StockBatch[] @relation("HospitalStockBatch")
+  hospitalWarehouse       Warehouse[] @relation("HospitalWarehouse")
   hospitalWarehouseComponent WarehouseComponent[]  @relation("HospitalWarehouseComponent")
 }
 
