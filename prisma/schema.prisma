@@ -403,8 +403,8 @@ model Visit {
   id              String   @id @default(cuid())
   patient         Patient  @relation("PatientVisitHistory", fields: [patient_id], references: [id], onDelete: Restrict)
   patient_id      String
-  appoinment      DoctorAppoinment @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id], onDelete: Cascade)
-  appoinment_id   String?
+  appoinment      DoctorAppoinment? @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id], onDelete: Cascade)
+  appoinment_id   String?  @unique
   service_unit    ServiceUnit @default(POLI)
   status          VisitStatus @default(REGISTERED)
   payerType       String   @default("Umum")
