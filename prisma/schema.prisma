@@ -80,6 +80,29 @@ enum Severity {
   SEVERE
 }
 
+enum BillingStatus {
+  UNPAID
+  PAID
+  CANCELLED
+}
+
+enum BillingCategory {
+  DRUG
+  DOCTOR_SERVICE
+  NURSE_SERVICE
+  IGD_SERVICE
+  ROOM_FEE
+  LAB_RADIOLOGY
+  OTHER
+}
+
+enum ServiceUnit{
+  POLI
+  IGD
+  LABORATORY
+  RADIOLOGY  
+}
+
 model User {
   id                     String    @id @default(cuid())  
   name                   String?
@@ -154,6 +177,7 @@ model Patient {
   patientRecipes    DoctorRecipe[]   @relation("PatientRecipes")
   patientAppoinments DoctorAppoinment[] @relation("PatientAppoinments")
   patientAllergies  PatientAllergy[]  @relation("PatientAllergies")
+  billingPatient     Billing[] @relation("BillingPatient")
 }
 
 model Employee {
@@ -171,6 +195,7 @@ model Employee {
   pharmacistRecipes DoctorRecipe[]   @relation("PharmacistRecipes")
   doctorPractice    DoctorPractice[] @relation("DoctorPractice")
   employeePatientAllergy PatientAllergy[] @relation("EmployeePatientAllergy")
+  employeeServices    BillingItem[] @relation("EmployeeServices")
 }
 
 // ==========================================
@@ -198,7 +223,8 @@ model Products {
   inventoryLogs InventoryLogs[] @relation("ProductInventoryLogs")
 
   stocks      WarehouseStock[] @relation("ProductStocks")
-  batches     StockBatch[] @relation("ProductBatches")  
+  batches     StockBatch[] @relation("ProductBatches")
+  billings    BillingItem[] @relation("BillingProducts")
 }
 
 // ==========================================
@@ -335,7 +361,10 @@ model DoctorPractice {
   id            String   @id @default(cuid())
   doctor        Employee? @relation("DoctorPractice", fields: [doctor_id], references: [id], onDelete: SetNull)
   doctor_id     String?
-  practice_date DateTime    
+  practice_date DateTime
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   slotsPractice SlotPractice[] @relation("DoctorPracticeSlots")  
 }
@@ -375,7 +404,8 @@ model Visit {
   patient         Patient  @relation("PatientVisitHistory", fields: [patient_id], references: [id], onDelete: Restrict)
   patient_id      String
   appoinment      DoctorAppoinment @relation("PatientHistoryAppoinment", fields: [appoinment_id], references: [id], onDelete: Cascade)
-  appoinment_id   String   @unique
+  appoinment_id   String?
+  service_unit    ServiceUnit @default(POLI)
   status          VisitStatus @default(REGISTERED)
   payerType       String   @default("Umum")
   complaint       String?
@@ -383,17 +413,19 @@ model Visit {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  nursingRecord   NursingAssesment? @relation("NursingRecord")
-  doctorRecord    DoctorAssesment? @relation("DoctorRecord")
+  nursingRecord   NursingAssesment[] @relation("NursingRecord")
+  doctorRecord    DoctorAssesment[] @relation("DoctorRecord")
   medicalRecipe   DoctorRecipe? @relation("VisitRecipe")
+  billingVisit    Billing? @relation("BillingVisit")
 }
 
 model NursingAssesment {
   id              String   @id @default(cuid())
   visit           Visit    @relation("NursingRecord", fields: [visit_id], references: [id], onDelete: Cascade)
-  visit_id        String   @unique
+  visit_id        String
   nurse_id        String?
   nurse           Employee? @relation("NursingRecord", fields: [nurse_id], references: [id], onDelete: SetNull)
+  service_unit    ServiceUnit @default(POLI)
   sistolic        Int?
   diastolic       Int?
   heart_rate      Int?
@@ -409,9 +441,10 @@ model NursingAssesment {
 model DoctorAssesment {
   id              String   @id @default(cuid())
   visit           Visit    @relation("DoctorRecord", fields: [visit_id], references: [id], onDelete: Cascade)
-  visit_id        String   @unique
+  visit_id        String
   doctor_id       String?
   doctor          Employee? @relation("DoctorRecord", fields: [doctor_id], references: [id], onDelete: SetNull)
+  service_unit    ServiceUnit @default(POLI)
   subjective      String?  // S - Keluhan tambahan dari sudut pandang dokter
   objective       String?  // O - Hasil pemeriksaan fisik dokter
   assessment      String?  // A - Diagnosis kerja / Kode ICD-10
@@ -426,7 +459,7 @@ model DoctorRecipe {
   visit_id              String   @unique
   visit                 Visit    @relation("VisitRecipe", fields: [visit_id], references: [id], onDelete: Cascade)
   no_trx                String
-  recipe_date_exec      DateTime
+  recipe_date_exec      DateTime @default(now())
   patient               Patient?     @relation("PatientRecipes", fields: [patient_id], references: [id], onDelete: Restrict)
   patient_id            String?
   
@@ -463,4 +496,45 @@ model RecipeDetail {
   end_date      DateTime // Tanggal otomatis habis (start_date + duration_days)
   
   createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ==========================================
+// BILLING & PAYOUTS
+// ==========================================
+model Billing {
+  id             String        @id @default(cuid())
+  hospital_id    String
+  visit_id       String        @unique
+  visit          Visit         @relation("BillingVisit", fields: [visit_id], references: [id], onDelete: Cascade)
+  patient_id     String
+  patient        Patient       @relation("BillingPatient", fields: [patient_id], references: [id], onDelete: Restrict)
+  total_amount   Float         @default(0.0)
+  status         BillingStatus @default(UNPAID)
+  payment_method String?       // CASH, QRIS, BPJS, TRANSFER
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items          BillingItem[] @relation("BillingItems")
+}
+
+model BillingItem {
+  id          String          @id @default(cuid())
+  billing_id  String
+  billing     Billing         @relation("BillingItems", fields: [billing_id], references: [id], onDelete: Cascade)
+  
+  // Opsional jika item berupa barang/obat
+  product_id  String?
+  product     Products?       @relation("BillingProducts", fields: [product_id], references: [id], onDelete: SetNull)
+
+  // Opsional jika item berupa jasa tindakan yang menghasilkan insentif (payout) untuk karyawan
+  employee_id String?
+  employee    Employee?       @relation("EmployeeServices", fields: [employee_id], references: [id], onDelete: SetNull)
+
+  item_name   String          // cth: "Paracetamol 500mg", "Jasa Konsultasi IGD dr. Andi", "Jasa Jahit Luka"
+  category    BillingCategory @default(OTHER)
+  price       Float           // Harga satuan saat transaksi
+  qty         Int             @default(1)
+  subtotal    Float           // price * qty
+  createdAt   DateTime        @default(now())
 }
