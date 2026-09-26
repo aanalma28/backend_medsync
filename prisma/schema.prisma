@@ -168,6 +168,7 @@ model Hospital {
   hospitalStockBatch    StockBatch[] @relation("HospitalStockBatch")
   hospitalWarehouse       Warehouse[] @relation("HospitalWarehouse")
   hospitalWarehouseComponent WarehouseComponent[]  @relation("HospitalWarehouseComponent")
+  billingHospital      Billing[] @relation("BillingHospital")
 
   @@index([user_id])
 }
@@ -613,6 +614,7 @@ model RecipeDetail {
 // ==========================================
 model Billing {
   id             String        @id @default(cuid())
+  hospital       Hospital      @relation("BillingHospital", fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id    String
   visit_id       String        @unique
   visit          Visit         @relation("BillingVisit", fields: [visit_id], references: [id], onDelete: Cascade)
