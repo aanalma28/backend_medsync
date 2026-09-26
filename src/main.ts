@@ -18,25 +18,47 @@ async function bootstrap() {
   // ===== CORS (untuk integrasi frontend) =====
   app.enableCors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-    credentials: true, // Allow cookies cross-origin
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With'],
   });
 
-  // ===== Global Validation Pipe (input limiting & type safety) =====
+  // ===== TRUST PROXY =====
+  // Tanpa ini, ThrottlerGuard melihat IP proxy untuk semua request sehingga
+  // rate limit menjadi satu bucket global (login 5/menit menjadi 5/menit untuk
+  // SELURUH pengguna). Hanya aktifkan bila benar-benar di belakang proxy.
+  if (process.env.TRUST_PROXY === 'true') {
+    app.set('trust proxy', 1);
+  }
+
+  // ===== Global Pipes =====
+  // PENTING: ApplicationConfig.useGlobalPipes() MENGGANTI array pipe, bukan
+  // menambah. Versi sebelumnya memanggilnya dua kali:
+  //
+  //   app.useGlobalPipes(new ValidationPipe({ ... }));   // <-- tertimpa
+  //   app.useGlobalPipes(new SanitizePipe());            // <-- hanya ini yang hidup
+  //
+  // Akibatnya ValidationPipe TIDAK PERNAH berjalan: seluruh decorator DTO
+  // (@IsString, @IsEnum, @Min, ...) menjadi kode mati, whitelist dan
+  // forbidNonWhitelisted tidak aktif, dan transform tidak terjadi.
+  //
+  // Kedua pipe harus diberikan dalam SATU pemanggilan, SanitizePipe lebih dulu
+  // agar payload mentah disanitasi SEBELUM ValidationPipe mengubahnya menjadi
+  // instance DTO dan memvalidasinya.
   app.useGlobalPipes(
+    new SanitizePipe(),
     new ValidationPipe({
-      whitelist: true, // Strip unknown properties
-      forbidNonWhitelisted: true, // Reject unknown properties with error
-      transform: true, // Auto-transform payload to DTO instances
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
       transformOptions: {
         enableImplicitConversion: true,
       },
     }),
   );
 
-  // ===== Global Sanitization Pipe (XSS prevention on inputs) =====
-  app.useGlobalPipes(new SanitizePipe());
+  // ===== Graceful shutdown (SIGTERM/SIGINT) =====
+  app.enableShutdownHooks();
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

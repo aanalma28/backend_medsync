@@ -19,6 +19,17 @@ export class DepartmenService {
 
   /**
    * Create a new department.
+   *
+   * Dua perbaikan dari versi sebelumnya:
+   *
+   * 1. `category` kini benar-benar dipersistensikan. Sebelumnya field ini tidak
+   *    pernah ditulis sehingga selalu jatuh ke default GENERALIST, dan
+   *    CategoryDepartmen.LOGISTIC menjadi konfigurasi mati.
+   *
+   * 2. Uniqueness `departmen_code` diperiksa PER RUMAH SAKIT, bukan global.
+   *    Pemeriksaan global membuat rumah sakit kedua tidak dapat membuat
+   *    departmen "POLI" hanya karena rumah sakit pertama sudah memakainya —
+   *    padahal setiap rumah sakit pasti memiliki POLI/IGD/FARMASI.
    */
   async create(createDto: CreateDepartmenDto) {
     const hospital = await this.db.hospital.findUnique({
@@ -31,6 +42,7 @@ export class DepartmenService {
 
     const existing = await this.db.departmen.findFirst({
       where: {
+        hospital_id: createDto.hospital_id,
         departmen_code: {
           equals: createDto.departmen_code,
           mode: 'insensitive',
@@ -40,7 +52,7 @@ export class DepartmenService {
 
     if (existing) {
       throw new ConflictException(
-        `Kode departmen '${createDto.departmen_code}' sudah digunakan`,
+        `Kode departmen '${createDto.departmen_code}' sudah digunakan di rumah sakit ini`,
       );
     }
 
@@ -49,6 +61,7 @@ export class DepartmenService {
         hospital_id: createDto.hospital_id,
         name: createDto.name,
         departmen_code: createDto.departmen_code,
+        category: createDto.category ?? 'GENERALIST',
         address: createDto.address,
         city: createDto.city,
         is_active: createDto.is_active ?? true,
@@ -148,6 +161,9 @@ export class DepartmenService {
 
   /**
    * Find department detail by ID.
+   *
+   * `category` kini ikut dikembalikan. Sebelumnya field ini hanya muncul di
+   * findAll(), sehingga detail departmen tidak pernah menampilkan kategorinya.
    */
   async findOne(id: string) {
     const departmen = await this.db.departmen.findUnique({
@@ -194,6 +210,7 @@ export class DepartmenService {
         hospital: departmen.hospital,
         name: departmen.name,
         departmen_code: departmen.departmen_code,
+        category: departmen.category,
         address: departmen.address,
         city: departmen.city,
         is_active: departmen.is_active,
@@ -208,10 +225,28 @@ export class DepartmenService {
   /**
    * Update department by ID.
    * If is_active is modified, cascade status to all assigned employee users.
+   *
+   * Uniqueness `departmen_code` diperiksa per rumah sakit (lihat `create`),
+   * memakai rumah sakit tujuan bila `hospital_id` ikut diubah.
+   *
+   * CATATAN KEAMANAN: data ditulis field-per-field, bukan `data: updateDto`.
+   * Meskipun ValidationPipe sudah aktif dengan `whitelist` +
+   * `forbidNonWhitelisted` sehingga field asing sudah ditolak sebelum sampai ke
+   * sini, whitelist eksplisit ini tetap dipertahankan sebagai pertahanan
+   * berlapis: bila ValidationPipe dinonaktifkan lagi, tidak ada field tak
+   * terduga yang bisa masuk ke Prisma.
    */
   async update(id: string, updateDto: UpdateDepartmenDto) {
-    // Check existence
-    await this.findOne(id);
+    // Fetch the raw row so the current hospital_id is available for the
+    // scoped uniqueness check below.
+    const current = await this.db.departmen.findUnique({
+      where: { id },
+      select: { id: true, hospital_id: true },
+    });
+
+    if (!current) {
+      throw new NotFoundException('Departmen tidak ditemukan');
+    }
 
     if (updateDto.hospital_id) {
       const hospital = await this.db.hospital.findUnique({
@@ -222,10 +257,13 @@ export class DepartmenService {
       }
     }
 
-    // If updating departmen_code, check for duplicates
+    // If updating departmen_code, check for duplicates within the target hospital
     if (updateDto.departmen_code) {
+      const targetHospitalId = updateDto.hospital_id || current.hospital_id;
+
       const existingCode = await this.db.departmen.findFirst({
         where: {
+          hospital_id: targetHospitalId,
           departmen_code: {
             equals: updateDto.departmen_code,
             mode: 'insensitive',
@@ -236,15 +274,40 @@ export class DepartmenService {
 
       if (existingCode) {
         throw new ConflictException(
-          `Kode departmen '${updateDto.departmen_code}' sudah digunakan oleh departmen lain`,
+          `Kode departmen '${updateDto.departmen_code}' sudah digunakan oleh departmen lain di rumah sakit ini`,
         );
       }
+    }
+
+    // Explicit field whitelist — never spread the raw DTO into Prisma.
+    const data: Record<string, unknown> = {};
+
+    if (updateDto.hospital_id !== undefined) {
+      data.hospital_id = updateDto.hospital_id;
+    }
+    if (updateDto.name !== undefined) {
+      data.name = updateDto.name;
+    }
+    if (updateDto.departmen_code !== undefined) {
+      data.departmen_code = updateDto.departmen_code;
+    }
+    if (updateDto.category !== undefined) {
+      data.category = updateDto.category;
+    }
+    if (updateDto.address !== undefined) {
+      data.address = updateDto.address;
+    }
+    if (updateDto.city !== undefined) {
+      data.city = updateDto.city;
+    }
+    if (updateDto.is_active !== undefined) {
+      data.is_active = updateDto.is_active;
     }
 
     return this.db.$transaction(async (tx: any) => {
       const updated = await tx.departmen.update({
         where: { id },
-        data: updateDto,
+        data,
         include: {
           hospital: {
             select: {

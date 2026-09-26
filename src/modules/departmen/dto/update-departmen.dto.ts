@@ -1,4 +1,5 @@
-import { IsString, IsOptional, MinLength, MaxLength, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, MinLength, MaxLength, IsBoolean, IsEnum } from 'class-validator';
+import { CategoryDepartmen } from '../../../../generated/prisma/enums.js';
 
 export class UpdateDepartmenDto {
   @IsOptional()
@@ -16,6 +17,18 @@ export class UpdateDepartmenDto {
   @MinLength(2, { message: 'Kode departmen minimal 2 karakter' })
   @MaxLength(50, { message: 'Kode departmen maksimal 50 karakter' })
   departmen_code?: string;
+
+  /**
+   * Kategori departmen. Ditambahkan agar departmen dapat diubah menjadi
+   * LOGISTIC (atau kategori lain) setelah dibuat. Sebelumnya field ini tidak
+   * ada, sehingga category hanya bisa bernilai default GENERALIST selamanya.
+   */
+  @IsOptional()
+  @IsEnum(CategoryDepartmen, {
+    message:
+      'Kategori departmen tidak valid (ADMIN, GENERALIST, SPECIALIST, LABORATORY, PHARMACY, NURSING, LOGISTIC)',
+  })
+  category?: CategoryDepartmen;
 
   @IsOptional()
   @IsString({ message: 'Alamat departmen harus berupa string' })

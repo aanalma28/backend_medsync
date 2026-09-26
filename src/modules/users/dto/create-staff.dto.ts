@@ -8,12 +8,29 @@ import {
   IsDateString,
 } from 'class-validator';
 
+/**
+ * Role yang boleh dibuat melalui endpoint staff.
+ *
+ * Nilai enum ini harus SELALU menjadi subset dari `Role` di schema.prisma,
+ * karena UsersService.createStaff meneruskan nilainya langsung ke Prisma.
+ *
+ * Sebelumnya enum ini memakai `DOCTOR`, yang TIDAK ADA di schema (schema
+ * memakai GENERAL_DOCTOR dan SPECIALIST_DOCTOR), sehingga pembuatan akun
+ * dokter selalu gagal dengan PrismaClientValidationError.
+ *
+ * `LOGISTIC` ditambahkan untuk Dashboard Logistik. Karena LOGISTIC bukan
+ * bagian dari isNonEmployeeRole (hanya OWNER & SUPERADMIN), akun ini wajib
+ * memiliki departmen_id dan akan memperoleh baris Employee — itulah yang
+ * dipakai modul Logistik untuk me-resolve hospital_id pemanggil.
+ */
 export enum StaffRole {
   OWNER = 'OWNER',
   SUPERADMIN = 'SUPERADMIN',
   MASTERADMIN = 'MASTERADMIN',
   REGISTER_ADMIN = 'REGISTER_ADMIN',
-  DOCTOR = 'DOCTOR',
+  LOGISTIC = 'LOGISTIC',
+  GENERAL_DOCTOR = 'GENERAL_DOCTOR',
+  SPECIALIST_DOCTOR = 'SPECIALIST_DOCTOR',
   PHARMACIST = 'PHARMACIST',
   NURSE = 'NURSE',
 }

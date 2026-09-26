@@ -1,5 +1,14 @@
-import { IsString, IsNotEmpty, MinLength, MaxLength, IsBoolean, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength, MaxLength, IsBoolean, IsOptional, IsEnum } from 'class-validator';
+import { CategoryDepartmen } from '../../../../generated/prisma/enums.js';
 
+/**
+ * CATATAN: `category` WAJIB ada di DTO ini.
+ *
+ * DepartmenService.create() sudah menulis `createDto.category` (dengan default
+ * GENERALIST), tetapi DTO ini sebelumnya tidak mendeklarasikan field tersebut.
+ * Akibatnya TypeScript gagal dikompilasi dengan TS2339:
+ *   Property 'category' does not exist on type 'CreateDepartmenDto'.
+ */
 export class CreateDepartmenDto {
   @IsString({ message: 'Hospital ID harus berupa string' })
   @IsNotEmpty({ message: 'Hospital ID tidak boleh kosong' })
@@ -16,6 +25,13 @@ export class CreateDepartmenDto {
   @MinLength(2, { message: 'Kode departmen minimal 2 karakter' })
   @MaxLength(50, { message: 'Kode departmen maksimal 50 karakter' })
   departmen_code: string;
+
+  @IsOptional()
+  @IsEnum(CategoryDepartmen, {
+    message:
+      'Kategori departmen tidak valid (ADMIN, GENERALIST, SPECIALIST, LABORATORY, PHARMACY, NURSING, LOGISTIC)',
+  })
+  category?: CategoryDepartmen;
 
   @IsOptional()
   @IsString({ message: 'Alamat departmen harus berupa string' })

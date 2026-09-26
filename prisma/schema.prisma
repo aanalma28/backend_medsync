@@ -18,6 +18,7 @@ enum Role {
   SUPERADMIN
   MASTERADMIN
   REGISTER_ADMIN
+  LOGISTIC
   GENERAL_DOCTOR
   SPECIALIST_DOCTOR
   PHARMACIST
@@ -40,6 +41,7 @@ enum CategoryDepartmen{
   LABORATORY
   PHARMACY
   NURSING
+  LOGISTIC
 }
 
 enum SlotStatus{
@@ -103,6 +105,29 @@ enum ServiceUnit{
   RADIOLOGY  
 }
 
+// Tipe lokasi penyimpanan fisik (model warehouse flat)
+enum WarehouseType {
+  MAIN        // Gudang Utama Logistik
+  PHARMACY    // Depo Farmasi
+  LABORATORY  // Depo Laboratorium
+  POLI        // Depo Poli
+  IGD         // Depo IGD
+  OTHER       // Depo lainnya
+}
+
+// Jenis mutasi aktivitas produk pada buku besar inventaris
+enum InventoryLogType {
+  INITIAL        // Stok awal
+  PURCHASE       // Penerimaan barang dari supplier ke Gudang Utama
+  RESTOCK        // Alias penerimaan (kompatibilitas data lama)
+  TRANSFER_OUT   // Pengeluaran barang dari gudang asal
+  TRANSFER_IN    // Penerimaan barang di gudang tujuan
+  DISPENSE       // Pemotongan stok karena validasi resep apoteker
+  USAGE          // Pemotongan stok karena pemakaian BMHP/alat oleh perawat
+  ADJUSTMENT     // Koreksi stok opname / barang rusak / kadaluarsa
+  RETURN         // Pengembalian barang ke gudang
+}
+
 model User {
   id                     String    @id @default(cuid())  
   name                   String?
@@ -143,6 +168,8 @@ model Hospital {
   hospitalStockBatch    StockBatch[] @relation("HospitalStockBatch")
   hospitalWarehouse       Warehouse[] @relation("HospitalWarehouse")
   hospitalWarehouseComponent WarehouseComponent[]  @relation("HospitalWarehouseComponent")
+
+  @@index([user_id])
 }
 
 model Departmen {
@@ -159,6 +186,8 @@ model Departmen {
   updatedAt      DateTime  @updatedAt
   
   employees Employee[]
+
+  @@index([hospital_id])
 }
 
 model Patient {
@@ -178,6 +207,9 @@ model Patient {
   patientAppoinments DoctorAppoinment[] @relation("PatientAppoinments")
   patientAllergies  PatientAllergy[]  @relation("PatientAllergies")
   billingPatient     Billing[] @relation("BillingPatient")
+
+  @@index([user_id])
+  @@index([medical_record_number])
 }
 
 model Employee {
@@ -196,6 +228,9 @@ model Employee {
   doctorPractice    DoctorPractice[] @relation("DoctorPractice")
   employeePatientAllergy PatientAllergy[] @relation("EmployeePatientAllergy")
   employeeServices    BillingItem[] @relation("EmployeeServices")
+  employeeUsages      VisitUsage[]  @relation("EmployeeUsages")
+
+  @@index([departmen_id])
 }
 
 // ==========================================
@@ -205,13 +240,13 @@ model Products {
   id          String   @id @default(cuid())
   hospital    Hospital @relation("HospitalProducts",fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id String
-  code        String   @unique
+  code        String
   name        String
   category    Category @default(DRUG)
   unit        String  
   buy_price   Float
   sell_price  Float  
-
+  description String?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -223,8 +258,13 @@ model Products {
   inventoryLogs InventoryLogs[] @relation("ProductInventoryLogs")
 
   stocks      WarehouseStock[] @relation("ProductStocks")
-  batches     StockBatch[] @relation("ProductBatches")
-  billings    BillingItem[] @relation("BillingProducts")
+  batches     StockBatch[]     @relation("ProductBatches")
+  billings    BillingItem[]    @relation("BillingProducts")
+  usages      VisitUsage[]     @relation("ProductUsages")
+
+  @@unique([hospital_id, code])
+  @@index([hospital_id])
+  @@index([category])
 }
 
 // ==========================================
@@ -235,18 +275,27 @@ model Warehouse {
   hospital      Hospital             @relation("HospitalWarehouse", fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id   String
   name          String               // Cth: "Gudang Utama Logistik Medis"
+  type          WarehouseType        @default(OTHER)
   description   String?
   
   components    WarehouseComponent[] @relation("WarehouseComponents")
   stocks        WarehouseStock[]     @relation("WarehouseStocks")
   batches       StockBatch[]         @relation("WarehouseBatches")
   logs          InventoryLogs[]      @relation("WarehouseInventoryLogs")
+  usages        VisitUsage[]         @relation("WarehouseUsages")
   
   createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@unique([hospital_id, name])
+  @@index([hospital_id])
+  @@index([hospital_id, type])
 }
 
 // ==========================================
 // 3. GUDANG KOMPONEN / DEPO UNIT SATELIT
+// (Disimpan untuk kompatibilitas; modul Logistik
+//  memakai model warehouse flat dan belum memakainya)
 // ==========================================
 model WarehouseComponent {
   id            String               @id @default(cuid())
@@ -262,6 +311,9 @@ model WarehouseComponent {
   logs          InventoryLogs[]  @relation("WarehouseComponentInventoryLogs")
   
   createdAt     DateTime             @default(now())
+
+  @@index([hospital_id])
+  @@index([warehouse_id])
 }
 
 // ==========================================
@@ -272,8 +324,8 @@ model WarehouseStock {
   product                Products            @relation("ProductStocks", fields: [product_id], references: [id], onDelete: Restrict)
   product_id             String  
   
-  warehouse              Warehouse?          @relation("WarehouseStocks", fields: [warehouse_id], references: [id], onDelete: Cascade)
-  warehouse_id           String?  
+  warehouse              Warehouse           @relation("WarehouseStocks", fields: [warehouse_id], references: [id], onDelete: Cascade)
+  warehouse_id           String  
   
   warehouseComponent     WarehouseComponent? @relation("WarehouseComponentStocks", fields: [warehouse_component_id], references: [id], onDelete: Cascade)
   warehouse_component_id String?
@@ -281,8 +333,12 @@ model WarehouseStock {
   stock                  Int                 @default(0)
   min_stock              Int                 @default(5)
   
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
   @@unique([product_id, warehouse_id])
-  @@unique([product_id, warehouse_component_id])
+  @@index([warehouse_id])
+  @@index([product_id])
 }
 
 // ==========================================
@@ -295,18 +351,23 @@ model StockBatch {
   product                Products            @relation("ProductBatches", fields: [product_id], references: [id], onDelete: Cascade)
   product_id             String
   
-  warehouse              Warehouse?          @relation("WarehouseBatches", fields: [warehouse_id], references: [id], onDelete: Cascade)
-  warehouse_id           String?
+  warehouse              Warehouse           @relation("WarehouseBatches", fields: [warehouse_id], references: [id], onDelete: Cascade)
+  warehouse_id           String
   
   warehouseComponent     WarehouseComponent? @relation("WarehouseComponentBatches", fields: [warehouse_component_id], references: [id], onDelete: Cascade)
   warehouse_component_id String?
   
   batch_number           String              // Nomor batch pabrik dari faktur
   exp_date               DateTime            // Tanggal kedaluwarsa obat
+  buy_price              Float?              // Harga beli per batch (harga saat penerimaan)
   initial_stock          Int                 // Jumlah awal batch masuk
   current_stock          Int                 // Sisa kuantiti aktual batch ini
   
   createdAt              DateTime            @default(now())
+
+  @@unique([product_id, warehouse_id, batch_number])
+  @@index([hospital_id])
+  @@index([product_id, warehouse_id, exp_date])
 }
 
 // ==========================================
@@ -319,8 +380,8 @@ model InventoryLogs {
   product                Products            @relation("ProductInventoryLogs", fields: [product_id], references: [id])
   product_id             String
   
-  warehouse              Warehouse?          @relation("WarehouseInventoryLogs", fields: [warehouse_id], references: [id])
-  warehouse_id           String?
+  warehouse              Warehouse           @relation("WarehouseInventoryLogs", fields: [warehouse_id], references: [id])
+  warehouse_id           String
   
   warehouseComponent     WarehouseComponent? @relation("WarehouseComponentInventoryLogs", fields: [warehouse_component_id], references: [id])
   warehouse_component_id String?
@@ -328,33 +389,62 @@ model InventoryLogs {
   user                   User?               @relation("UserWriter", fields: [user_id], references: [id])
   user_id                String?
   
-  type                   String              // PURCHASE, TRANSFER_OUT, TRANSFER_IN, USAGE, DISPENSE, RETURN
+  type                   InventoryLogType    // INITIAL, PURCHASE, TRANSFER_OUT, TRANSFER_IN, DISPENSE, USAGE, ADJUSTMENT, RETURN
   quantity               Int                 // Nilai mutasi (+ masuk, - keluar)
+  buy_price              Float?              // Harga beli saat mutasi (audit harga)
   source_destination     String?             // Keterangan pihak luar (Cth: "PT. Kimia Farma")
   reference_number       String?             // No PO, No Faktur, No Amprahan, No Resep  
   notes                  String?
   
   createdAt              DateTime            @default(now())
+
+  @@index([hospital_id, createdAt])
+  @@index([product_id])
+  @@index([warehouse_id])
+  @@index([type])
 }
 
 // ==========================================
-// 7. STRUKTUR KLINIS: ALERGI PASIEN
+// 7. PEMAKAIAN BARANG PADA TINDAKAN KLINIS (USAGE)
+// ==========================================
+model VisitUsage {
+  id           String    @id @default(cuid())
+  visit        Visit     @relation("VisitUsages", fields: [visit_id], references: [id], onDelete: Cascade)
+  visit_id     String
+  product      Products  @relation("ProductUsages", fields: [product_id], references: [id], onDelete: Restrict)
+  product_id   String
+  warehouse    Warehouse @relation("WarehouseUsages", fields: [warehouse_id], references: [id], onDelete: Restrict)
+  warehouse_id String
+  employee     Employee? @relation("EmployeeUsages", fields: [employee_id], references: [id], onDelete: SetNull)
+  employee_id  String?
+  quantity     Int
+  notes        String?
+  createdAt    DateTime  @default(now())
+
+  @@index([visit_id])
+  @@index([product_id])
+}
+
+// ==========================================
+// 8. STRUKTUR KLINIS: ALERGI PASIEN
 // ==========================================
 model PatientAllergy {
   id          String   @id @default(cuid())
   hospital    Hospital @relation("HospitalPatientAllergy", fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id String
   patient     Patient  @relation("PatientAllergies", fields: [patient_id], references: [id], onDelete: Cascade)
-  patient_id  String   // Relasi ke User / Pasien
-  employee    Employee @relation("EmployeePatientAllergy", fields: [employee_id], references: [id], onDelete: SetNull)
-  employee_id String
+  patient_id  String
+  employee    Employee? @relation("EmployeePatientAllergy", fields: [employee_id], references: [id], onDelete: SetNull)
+  employee_id String?
   
-  allergen    String   // Nama obat / golongan pemicu (Cth: Penisilin)
-  severity    Severity @default(MILD)   // MILD (Ringan), MODERATE (Sedang), SEVERE (Berat)
-  reaction    String?  // Deskripsi reaksi (Cth: Ruam & sesak napas)  
+  allergen    String
+  severity    Severity @default(MILD)
+  reaction    String?
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([patient_id])
 }
 
 model DoctorPractice {
@@ -383,6 +473,8 @@ model SlotPractice {
   updatedAt     DateTime @updatedAt
 
   appoinments   DoctorAppoinment[] @relation("DoctorPracticeSlots")
+
+  @@index([practice_id])
 }
 
 model DoctorAppoinment {
@@ -397,6 +489,9 @@ model DoctorAppoinment {
   updatedAt                 DateTime @updatedAt
 
   patientHistory Visit? @relation("PatientHistoryAppoinment")
+
+  @@index([slot_practice_id])
+  @@index([patient_id])
 }
 
 model Visit {
@@ -414,9 +509,13 @@ model Visit {
   updatedAt       DateTime @updatedAt
 
   nursingRecord   NursingAssesment[] @relation("NursingRecord")
-  doctorRecord    DoctorAssesment[] @relation("DoctorRecord")
+  doctorRecord    DoctorAssesment[]  @relation("DoctorRecord")
   medicalRecipe   DoctorRecipe? @relation("VisitRecipe")
   billingVisit    Billing? @relation("BillingVisit")
+  usages          VisitUsage[] @relation("VisitUsages")
+
+  @@index([patient_id])
+  @@index([status])
 }
 
 model NursingAssesment {
@@ -436,6 +535,8 @@ model NursingAssesment {
   notes           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([visit_id])
 }
 
 model DoctorAssesment {
@@ -445,13 +546,15 @@ model DoctorAssesment {
   doctor_id       String?
   doctor          Employee? @relation("DoctorRecord", fields: [doctor_id], references: [id], onDelete: SetNull)
   service_unit    ServiceUnit @default(POLI)
-  subjective      String?  // S - Keluhan tambahan dari sudut pandang dokter
-  objective       String?  // O - Hasil pemeriksaan fisik dokter
-  assessment      String?  // A - Diagnosis kerja / Kode ICD-10
-  plan            String?  // P - Rencana pengobatan / tindakan medis
-  doctorNotes     String?  // Catatan bebas tambahan dari dokter
+  subjective      String?
+  objective       String?
+  assessment      String?
+  plan            String?
+  doctorNotes     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([visit_id])
 }
 
 model DoctorRecipe {
@@ -478,6 +581,9 @@ model DoctorRecipe {
   updatedAt             DateTime @updatedAt
   
   recipeDetails         RecipeDetail[]    
+
+  @@index([status])
+  @@index([patient_id])
 }
 
 model RecipeDetail {
@@ -489,14 +595,17 @@ model RecipeDetail {
   product    Products     @relation(fields: [product_id], references: [id], onDelete: Restrict)
   product_id String
   
-  qty           Int      // Jumlah fisik obat diberikan
-  dosage        String   // Aturan pakai (Cth: 3x1 sesudah makan)
-  duration_days Int      // Lama konsumsi dalam hari (Cth: 10 hari)
-  start_date    DateTime // Tanggal mulai resep
-  end_date      DateTime // Tanggal otomatis habis (start_date + duration_days)
+  qty           Int
+  dosage        String
+  duration_days Int
+  start_date    DateTime
+  end_date      DateTime
   
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([recipe_id])
+  @@index([product_id])
 }
 
 // ==========================================
@@ -509,13 +618,20 @@ model Billing {
   visit          Visit         @relation("BillingVisit", fields: [visit_id], references: [id], onDelete: Cascade)
   patient_id     String
   patient        Patient       @relation("BillingPatient", fields: [patient_id], references: [id], onDelete: Restrict)
-  total_amount   Float         @default(0.0)
+  // Uang disimpan sebagai Decimal (PostgreSQL numeric), BUKAN Float.
+  // Float = double precision (IEEE-754 biner) sehingga penjumlahan subtotal
+  // item dapat menghasilkan drift pembulatan dan perbandingan `=` menjadi
+  // tidak andal. Decimal bersifat exact.
+  total_amount   Decimal       @default(0) @db.Decimal(14, 2)
   status         BillingStatus @default(UNPAID)
-  payment_method String?       // CASH, QRIS, BPJS, TRANSFER
+  payment_method String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   items          BillingItem[] @relation("BillingItems")
+
+  @@index([hospital_id])
+  @@index([patient_id])
 }
 
 model BillingItem {
@@ -523,18 +639,18 @@ model BillingItem {
   billing_id  String
   billing     Billing         @relation("BillingItems", fields: [billing_id], references: [id], onDelete: Cascade)
   
-  // Opsional jika item berupa barang/obat
   product_id  String?
   product     Products?       @relation("BillingProducts", fields: [product_id], references: [id], onDelete: SetNull)
 
-  // Opsional jika item berupa jasa tindakan yang menghasilkan insentif (payout) untuk karyawan
   employee_id String?
   employee    Employee?       @relation("EmployeeServices", fields: [employee_id], references: [id], onDelete: SetNull)
 
-  item_name   String          // cth: "Paracetamol 500mg", "Jasa Konsultasi IGD dr. Andi", "Jasa Jahit Luka"
+  item_name   String
   category    BillingCategory @default(OTHER)
-  price       Float           // Harga satuan saat transaksi
+  price       Decimal         @db.Decimal(14, 2)
   qty         Int             @default(1)
-  subtotal    Float           // price * qty
+  subtotal    Decimal         @db.Decimal(14, 2)
   createdAt   DateTime        @default(now())
+
+  @@index([billing_id])
 }

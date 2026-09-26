@@ -1,38 +1,64 @@
 import { PipeTransform, Injectable, ArgumentMetadata } from '@nestjs/common';
 
 /**
- * Global Sanitization Pipe — XSS Prevention.
+ * Keys yang tidak boleh disalin ke objek hasil sanitasi.
+ * `JSON.parse` membuat `__proto__` sebagai own enumerable property, sehingga
+ * `target[key] = value` akan memicu prototype setter.
+ */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Field yang diteruskan apa adanya.
+ * Kredensial TIDAK boleh di-trim atau ditulis ulang di sini — melakukannya
+ * akan mengubah nilai yang diketik pengguna sebelum sampai ke bcrypt.hash()
+ * maupun bcrypt.compare().
+ */
+const SKIPPED_KEYS = new Set(['password', 'confirm_password']);
+
+/**
+ * Global Sanitization Pipe — pencegahan XSS.
  *
- * Strips HTML tags and encodes dangerous characters from all string inputs.
- * Works recursively on objects and arrays.
+ * Menghapus tag HTML dari input string agar data tersimpan tidak membawa
+ * payload script. Bekerja rekursif pada objek dan array.
  *
- * This prevents Stored XSS attacks where malicious scripts
- * could be saved to the database via user input.
+ * PENTING: pipe ini hanya melakukan normalisasi INPUT. Ia sengaja TIDAK
+ * melakukan HTML entity encoding (`&` -> `&amp;`). Entity encoding adalah
+ * urusan OUTPUT; melakukannya saat menulis akan menyimpan
+ * `Rumah Sakit Ibu &amp; Anak` dan `O&#x27;Brien`, memaksa setiap konsumen
+ * melakukan un-escape, dan menyebabkan double-escaping (`&amp;amp;`) ketika
+ * frontend melakukan escape sekali lagi.
  */
 @Injectable()
 export class SanitizePipe implements PipeTransform {
   transform(value: any, metadata: ArgumentMetadata) {
-    // Only sanitize body parameters (not query params, route params, etc.)
+    // Hanya sanitasi body (query & route param dibiarkan)
     if (metadata.type !== 'body') {
       return value;
     }
 
-    return this.sanitize(value);
+    return this.sanitize(value, null);
   }
 
-  private sanitize(value: any): any {
+  private sanitize(value: any, key: string | null): any {
+    if (key !== null && SKIPPED_KEYS.has(key)) {
+      return value;
+    }
+
     if (typeof value === 'string') {
       return this.sanitizeString(value);
     }
 
     if (Array.isArray(value)) {
-      return value.map((item) => this.sanitize(item));
+      return value.map((item) => this.sanitize(item, null));
     }
 
     if (value !== null && typeof value === 'object') {
       const sanitized: Record<string, any> = {};
-      for (const key of Object.keys(value)) {
-        sanitized[key] = this.sanitize(value[key]);
+      for (const childKey of Object.keys(value)) {
+        if (FORBIDDEN_KEYS.has(childKey)) {
+          continue;
+        }
+        sanitized[childKey] = this.sanitize(value[childKey], childKey);
       }
       return sanitized;
     }
@@ -41,19 +67,10 @@ export class SanitizePipe implements PipeTransform {
   }
 
   /**
-   * Sanitize a single string value:
-   * 1. Trim whitespace
-   * 2. Strip HTML tags
-   * 3. Encode HTML entities for dangerous characters
+   * 1. Hapus tag HTML
+   * 2. Trim spasi di ujung
    */
   private sanitizeString(input: string): string {
-    return input
-      .trim()
-      .replace(/<[^>]*>/g, '') // Strip HTML tags
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;');
+    return input.replace(/<[^>]*>/g, '').trim();
   }
 }
