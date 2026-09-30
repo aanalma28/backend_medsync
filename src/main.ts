@@ -1,13 +1,14 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { SanitizePipe } from './common/pipes/sanitize.pipe.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // ===== SECURITY: HTTP Headers (XSS, Clickjacking, MIME sniffing, etc.) =====
   app.use(helmet());
