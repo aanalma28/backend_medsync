@@ -32,6 +32,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
   'MASTERADMIN',
   'GENERAL_DOCTOR',
   'SPECIALIST_DOCTOR',
+  'LOGISTIC',
 )
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
