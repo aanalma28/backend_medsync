@@ -34,6 +34,48 @@ export class ProductsService {
     return employee?.id || null;
   }
 
+  /**
+   * Helper to resolve the default warehouse/depot owned by the user's department,
+   * following the chain: user_id -> Employee -> Departmen -> Warehouses.
+   *
+   * Dipakai baik oleh `createProduct` maupun `updateProduct` agar kedua operasi
+   * memakai lokasi penyimpanan default yang sama.
+   */
+  private async resolveUserWarehouse(userId: string) {
+    const employee = await this.db.employee.findUnique({
+      where: { user_id: userId },
+      include: {
+        departmen: {
+          include: {
+            warehouses: {
+              orderBy: { createdAt: 'asc' },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    if (!employee || !employee.departmen) {
+      throw new NotFoundException(
+        'Data karyawan/departemen tidak ditemukan untuk user ini',
+      );
+    }
+
+    const warehouse = employee.departmen.warehouses?.[0];
+
+    if (!warehouse) {
+      throw new NotFoundException(
+        'Gudang/depo tidak ditemukan untuk departemen user ini',
+      );
+    }
+
+    return {
+      hospitalId: employee.departmen.hospital_id as string,
+      warehouse,
+    };
+  }
+
   // ─────────────────────────────────────────────
   // 1. Catalog & Master Data Products
   // ─────────────────────────────────────────────
@@ -64,6 +106,10 @@ export class ProductsService {
     // 1. RAW SQL UTAMA: Mengambil produk berdasarkan `hospital_id` di tabel Products.
     // `target_hospital` di-resolve dari Employee (via Departmen) atau Owner langsung.
     // Stok aktual = SUM(WarehouseStock.stock) dari gudang milik hospital tersebut.
+    //
+    // PENTING: nama tabel gudang pada skema terbaru adalah "Warehouses" (plural),
+    // bukan "Warehouse". Menulis "Warehouse" memicu error
+    // `42P01 relation "Warehouse" does not exist`.
     const items: any[] = await this.db.$queryRaw`
       WITH target_hospital AS (
         -- Jalur 1: Jika user adalah Employee (Dokter, Perawat, Apoteker, dll)
@@ -87,7 +133,7 @@ export class ProductsService {
           SUM(ws."stock")::int      AS "stock",
           MIN(ws."min_stock")::int  AS "minStock"
         FROM "WarehouseStock" ws
-        JOIN "Warehouse" w       ON ws."warehouse_id" = w."id"
+        JOIN "Warehouses" w      ON ws."warehouse_id" = w."id"
         JOIN target_hospital th  ON w."hospital_id"   = th."hospitalId"
         GROUP BY ws."product_id"
       ),
@@ -143,7 +189,7 @@ export class ProductsService {
           SUM(ws."stock")::int      AS "stock",
           MIN(ws."min_stock")::int  AS "minStock"
         FROM "WarehouseStock" ws
-        JOIN "Warehouse" w       ON ws."warehouse_id" = w."id"
+        JOIN "Warehouses" w      ON ws."warehouse_id" = w."id"
         JOIN target_hospital th  ON w."hospital_id"   = th."hospitalId"
         GROUP BY ws."product_id"
       )
@@ -184,7 +230,7 @@ export class ProductsService {
           SUM(ws."stock")::int      AS "stock",
           MIN(ws."min_stock")::int  AS "minStock"
         FROM "WarehouseStock" ws
-        JOIN "Warehouse" w       ON ws."warehouse_id" = w."id"
+        JOIN "Warehouses" w      ON ws."warehouse_id" = w."id"
         JOIN target_hospital th  ON w."hospital_id"   = th."hospitalId"
         GROUP BY ws."product_id"
       )
@@ -309,57 +355,94 @@ export class ProductsService {
 
   /**
    * Add a new product to master catalog.
+   *
+   * Penyesuaian skema terbaru:
+   * - `Products` tidak lagi menyimpan `stock` / `min_stock`.
+   * - Nilai `stock` & `min_stock` disimpan pada tabel `WarehouseStock`,
+   *   dengan `warehouse_id` di-resolve dari rantai:
+   *   user_id -> Employee -> Departmen -> Warehouses.
+   * - Nilai `stock` untuk produk baru di-hardcode 0 (produk baru belum
+   *   memiliki stok sampai dilakukan restock).
+   * - `min_stock` tetap dikirim dari frontend.
+   *
+   * Catatan: `Products.hospital_id` bersifat wajib pada skema terbaru,
+   * sehingga diambil dari `Departmen.hospital_id` milik user.
    */
   async createProduct(userId: string, createDto: CreateProductDto) {
-    const existingCode = await this.db.products.findUnique({
-      where: { code: createDto.code },
+    // 1. Resolve rantai: user -> Employee -> Departmen -> Warehouses.
+    const { hospitalId, warehouse } = await this.resolveUserWarehouse(userId);
+
+    // 2. Cek duplikasi kode produk dalam lingkup hospital yang sama.
+    //    Skema terbaru memakai @@unique([hospital_id, code]), sehingga kode
+    //    produk unik per rumah sakit (bukan lagi unik global). Karena itu
+    //    `findUnique` tidak dapat dipakai pada `code` saja.
+    const existingCode = await this.db.products.findFirst({
+      where: {
+        hospital_id: hospitalId,
+        code: createDto.code.toUpperCase(),
+      },
     });
 
     if (existingCode) {
-      throw new ConflictException(`Kode produk/SKU "${createDto.code}" sudah terdaftar.`);
+      throw new ConflictException(
+        `Kode produk/SKU "${createDto.code}" sudah terdaftar.`,
+      );
     }
 
     return this.db.$transaction(async (tx: any) => {
+      // 3. Buat master produk (tanpa stock / min_stock).
       const product = await tx.products.create({
         data: {
+          hospital_id: hospitalId,
           code: createDto.code.toUpperCase(),
           name: createDto.name,
           category: createDto.category,
           unit: createDto.unit,
-          stock: Number(createDto.stock),
-          min_stock: Number(createDto.min_stock),
           buy_price: Number(createDto.buy_price),
           sell_price: Number(createDto.sell_price),
           description: createDto.description || '',
         },
       });
 
-      // If initial stock > 0, log initial inventory
-      if (Number(createDto.stock) > 0) {
-        await tx.inventoryLogs.create({
-          data: {
-            product_id: product.id,
-            type: 'INITIAL',
-            quantity: Number(createDto.stock),
-            buy_price: Number(createDto.buy_price),
-            user_id: userId,
-            notes: 'Stok awal pembuatan produk baru',
-          },
-        });
-      }
+      // 4. Simpan stock & min_stock ke WarehouseStock.
+      //    stock = 0 (hardcode), min_stock = nilai dari frontend.
+      await tx.warehouseStock.create({
+        data: {
+          product_id: product.id,
+          warehouse_id: warehouse.id,
+          stock: 0,
+          min_stock: Number(createDto.min_stock),
+        },
+      });
 
       return {
         statusCode: 201,
         message: 'Produk baru berhasil ditambahkan',
-        data: product,
+        data: {
+          ...product,
+          // Sertakan nilai stok agar bentuk respons tetap konsisten
+          // dengan sebelum perubahan skema.
+          stock: 0,
+          min_stock: Number(createDto.min_stock),
+        },
       };
     });
   }
 
   /**
    * Update product information and prices.
+   *
+   * Konsisten dengan `createProduct`:
+   * - `Products` tidak lagi menyimpan `stock` / `min_stock`.
+   * - `min_stock` disimpan pada tabel `WarehouseStock`, dengan `warehouse_id`
+   *   di-resolve dari rantai: user_id -> Employee -> Departmen -> Warehouses.
+   * - `stock` yang dikirim frontend hanya FORMALITAS (diabaikan di sini);
+   *   perubahan stok hanya terjadi melalui restock / dispense.
    */
-  async updateProduct(id: string, updateDto: UpdateProductDto) {
+  async updateProduct(userId: string, id: string, updateDto: UpdateProductDto) {
+    // 1. Resolve rantai: user -> Employee -> Departmen -> Warehouses.
+    const { hospitalId, warehouse } = await this.resolveUserWarehouse(userId);
+
     const existing = await this.db.products.findUnique({
       where: { id },
     });
@@ -368,24 +451,74 @@ export class ProductsService {
       throw new NotFoundException('Produk tidak ditemukan');
     }
 
-    const updated = await this.db.products.update({
-      where: { id },
-      data: {
-        ...(updateDto.name !== undefined && { name: updateDto.name }),
-        ...(updateDto.category !== undefined && { category: updateDto.category }),
-        ...(updateDto.unit !== undefined && { unit: updateDto.unit }),
-        ...(updateDto.min_stock !== undefined && { min_stock: Number(updateDto.min_stock) }),
-        ...(updateDto.buy_price !== undefined && { buy_price: Number(updateDto.buy_price) }),
-        ...(updateDto.sell_price !== undefined && { sell_price: Number(updateDto.sell_price) }),
-        ...(updateDto.description !== undefined && { description: updateDto.description }),
-      },
-    });
+    // 2. Cek duplikasi kode produk (bila kode diubah) dalam hospital yang sama.
+    if (
+      updateDto.code !== undefined &&
+      updateDto.code.toUpperCase() !== existing.code
+    ) {
+      const existingCode = await this.db.products.findFirst({
+        where: {
+          hospital_id: hospitalId,
+          code: updateDto.code.toUpperCase(),
+          NOT: { id },
+        },
+      });
 
-    return {
-      statusCode: 200,
-      message: 'Data produk berhasil diperbarui',
-      data: updated,
-    };
+      if (existingCode) {
+        throw new ConflictException(
+          `Kode produk/SKU "${updateDto.code}" sudah terdaftar.`,
+        );
+      }
+    }
+
+    return this.db.$transaction(async (tx: any) => {
+      // 3. Update master produk (tanpa stock / min_stock).
+      const updated = await tx.products.update({
+        where: { id },
+        data: {
+          ...(updateDto.code !== undefined && { code: updateDto.code.toUpperCase() }),
+          ...(updateDto.name !== undefined && { name: updateDto.name }),
+          ...(updateDto.category !== undefined && { category: updateDto.category }),
+          ...(updateDto.unit !== undefined && { unit: updateDto.unit }),
+          ...(updateDto.buy_price !== undefined && { buy_price: Number(updateDto.buy_price) }),
+          ...(updateDto.sell_price !== undefined && { sell_price: Number(updateDto.sell_price) }),
+          ...(updateDto.description !== undefined && { description: updateDto.description }),
+        },
+      });
+
+      // 4. Update `min_stock` pada WarehouseStock untuk gudang default user.
+      //    `stock` sengaja TIDAK diubah (hanya formalitas pada payload).
+      if (updateDto.min_stock !== undefined) {
+        await tx.warehouseStock.upsert({
+          where: {
+            product_id_warehouse_id: {
+              product_id: id,
+              warehouse_id: warehouse.id,
+            },
+          },
+          update: { min_stock: Number(updateDto.min_stock) },
+          create: {
+            product_id: id,
+            warehouse_id: warehouse.id,
+            stock: 0,
+            min_stock: Number(updateDto.min_stock),
+          },
+        });
+      }
+
+      return {
+        statusCode: 200,
+        message: 'Data produk berhasil diperbarui',
+        data: {
+          ...updated,
+          // Sertakan min_stock agar bentuk respons tetap konsisten.
+          min_stock:
+            updateDto.min_stock !== undefined
+              ? Number(updateDto.min_stock)
+              : undefined,
+        },
+      };
+    });
   }
 
   // ─────────────────────────────────────────────

@@ -18,10 +18,13 @@ export class CreateProductDto {
   @IsString({ message: 'Satuan harus berupa string' })
   unit: string;
 
-  @IsNotEmpty({ message: 'Stok awal wajib diisi' })
+  // Field `stock` tetap diterima dari frontend, namun hanya bersifat
+  // FORMALITAS: nilainya diabaikan oleh `createProduct` (stok produk baru
+  // selalu di-hardcode 0 di service dan disimpan pada tabel WarehouseStock).
+  @IsOptional()
   @IsNumber({}, { message: 'Stok harus berupa angka' })
   @Min(0, { message: 'Stok minimal 0' })
-  stock: number;
+  stock?: number;
 
   @IsNotEmpty({ message: 'Stok minimum wajib diisi' })
   @IsNumber({}, { message: 'Stok minimum harus berupa angka' })

@@ -107,14 +107,20 @@ export class ProductsController {
   /**
    * PATCH /products/:id
    * Update product basic info and prices.
+   *
+   * `user.id` diteruskan ke service karena `updateProduct` perlu me-resolve
+   * gudang/depo user (via rantai user -> Employee -> Departmen -> Warehouses)
+   * untuk memperbarui `min_stock` pada tabel `WarehouseStock`.
    */
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   async update(
+    @Req() request: Request,
     @Param('id') id: string,
     @Body() updateDto: UpdateProductDto,
   ) {
-    return this.productsService.updateProduct(id, updateDto);
+    const user = (request as any).user;
+    return this.productsService.updateProduct(user.id, id, updateDto);
   }
 
   /**

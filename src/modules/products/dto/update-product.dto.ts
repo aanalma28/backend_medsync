@@ -1,36 +1,53 @@
-import { IsOptional, IsString, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { Category } from '../../../../generated/prisma/enums.js';
 
 /**
- * DTO for updating existing product master details and prices.
+ * DTO for updating an existing product.
+ *
+ * Sengaja DISAMAKAN dengan `CreateProductDto`, karena frontend mengirimkan
+ * payload yang sama untuk operasi create maupun update:
+ * - `stock` tetap diterima namun hanya FORMALITAS (diabaikan oleh service;
+ *   perubahan stok hanya melalui restock / dispense).
+ * - `min_stock` disimpan pada tabel `WarehouseStock` (bukan `Products`).
  */
 export class UpdateProductDto {
-  @IsOptional()
+  @IsNotEmpty({ message: 'Kode produk wajib diisi' })
+  @IsString({ message: 'Kode produk harus berupa string' })
+  code: string;
+
+  @IsNotEmpty({ message: 'Nama produk wajib diisi' })
   @IsString({ message: 'Nama produk harus berupa string' })
-  name?: string;
+  name: string;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'Kategori produk wajib diisi' })
   @IsEnum(Category, { message: 'Kategori tidak valid' })
-  category?: Category;
+  category: Category;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'Satuan produk wajib diisi' })
   @IsString({ message: 'Satuan harus berupa string' })
-  unit?: string;
+  unit: string;
 
+  // Field `stock` tetap diterima dari frontend, namun hanya bersifat
+  // FORMALITAS: nilainya diabaikan oleh `updateProduct`.
   @IsOptional()
-  @IsNumber({}, { message: 'Minimum stok harus berupa angka' })
-  @Min(0, { message: 'Minimum stok tidak boleh negatif' })
-  min_stock?: number;
+  @IsNumber({}, { message: 'Stok harus berupa angka' })
+  @Min(0, { message: 'Stok minimal 0' })
+  stock?: number;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'Stok minimum wajib diisi' })
+  @IsNumber({}, { message: 'Stok minimum harus berupa angka' })
+  @Min(0, { message: 'Stok minimum minimal 0' })
+  min_stock: number;
+
+  @IsNotEmpty({ message: 'Harga beli wajib diisi' })
   @IsNumber({}, { message: 'Harga beli harus berupa angka' })
-  @Min(0, { message: 'Harga beli tidak boleh negatif' })
-  buy_price?: number;
+  @Min(0, { message: 'Harga beli minimal 0' })
+  buy_price: number;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'Harga jual wajib diisi' })
   @IsNumber({}, { message: 'Harga jual harus berupa angka' })
-  @Min(0, { message: 'Harga jual tidak boleh negatif' })
-  sell_price?: number;
+  @Min(0, { message: 'Harga jual minimal 0' })
+  sell_price: number;
 
   @IsOptional()
   @IsString({ message: 'Deskripsi harus berupa string' })
