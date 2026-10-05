@@ -190,6 +190,9 @@ model Departmen {
   updatedAt      DateTime  @updatedAt
   
   employees Employee[]
+  // Relasi balik ke Warehouses: satu departemen bisa memiliki banyak
+  // lokasi penyimpanan (mis. Instalasi Farmasi memiliki Depo Resep + Apotek Retail).
+  warehouses Warehouses[] @relation("DepartmenWarehouses")
 
   @@index([hospital_id])
 }
@@ -279,11 +282,18 @@ model Products {
 //    (POLI), IGD (IGD), dan lainnya (OTHER).
 //    Model WarehouseComponent sudah dihapus dan
 //    digabung ke sini.
+//
+//    Setiap lokasi kini juga terikat ke satu
+//    Departmen pemiliknya (mis. Gudang Utama ->
+//    Instalasi Logistik, Depo Farmasi -> Instalasi
+//    Farmasi) melalui field `departmen_id`.
 // ==========================================
 model Warehouses {
   id            String               @id @default(cuid())
   hospital      Hospital             @relation("HospitalWarehouses", fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id   String
+  departmen     Departmen            @relation("DepartmenWarehouses", fields: [departmen_id], references: [id], onDelete: Restrict)
+  departmen_id  String
   name          String               // Cth: "Gudang Utama Logistik Medis", "Depo Farmasi Resep"
   type          WarehouseType        @default(OTHER)
   description   String?
@@ -299,6 +309,7 @@ model Warehouses {
   @@unique([hospital_id, name])
   @@index([hospital_id])
   @@index([hospital_id, type])
+  @@index([departmen_id])
 }
 
 // ==========================================

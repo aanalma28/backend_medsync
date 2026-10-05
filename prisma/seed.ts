@@ -14,6 +14,8 @@ async function main() {
 
   // ==========================================
   // 1. CLEANUP (Urutan terbalik dari relasi)
+  //    Warehouses dihapus SEBELUM Departmen karena FK
+  //    Warehouse.departmen_id memakai onDelete: Restrict.
   // ==========================================
   try {
     console.log('🧹 Cleaning existing data...');
@@ -413,10 +415,13 @@ async function main() {
   //    Gudang utama MAUPUN depo (farmasi, apotek, dsb) kini
   //    dibuat sebagai baris pada tabel Warehouses yang sama,
   //    dibedakan oleh kolom `type`.
+  //    Setiap lokasi kini juga terikat ke departmen pemiliknya
+  //    lewat `departmen_id` (FK -> Departmen).
   // ==========================================
   const centralWarehouse = await prisma.warehouses.create({
     data: {
       hospital_id: hospital.id,
+      departmen_id: logisticDept.id,
       name: 'Gudang Utama Logistik Medis',
       type: 'MAIN',
       description: 'Pusat penyimpanan utama barang farmasi dan alkes',
@@ -426,6 +431,7 @@ async function main() {
   const prescriptionDepot = await prisma.warehouses.create({
     data: {
       hospital_id: hospital.id,
+      departmen_id: pharmacyDept.id,
       name: 'Depo Farmasi Resep (Rawat Jalan)',
       type: 'PHARMACY',
       description: 'Depo farmasi untuk pelayanan resep rawat jalan',
@@ -435,6 +441,7 @@ async function main() {
   await prisma.warehouses.create({
     data: {
       hospital_id: hospital.id,
+      departmen_id: pharmacyDept.id,
       name: 'Apotek Umum / Retail RS',
       type: 'PHARMACY',
       description: 'Apotek retail rumah sakit',
