@@ -31,8 +31,7 @@ async function main() {
     await prisma.inventoryLogs.deleteMany();
     await prisma.stockBatch.deleteMany();
     await prisma.warehouseStock.deleteMany();
-    await prisma.warehouseComponent.deleteMany();
-    await prisma.warehouse.deleteMany();
+    await prisma.warehouses.deleteMany();
     await prisma.products.deleteMany();
     await prisma.patient.deleteMany();
     await prisma.employee.deleteMany();
@@ -409,45 +408,46 @@ async function main() {
   console.log('✅ 6. Tabel Products seeded.');
 
   // ==========================================
-  // 8. SEED WAREHOUSE (Tabel: Warehouse)
+  // 8. SEED WAREHOUSES (Tabel: Warehouses - FLAT)
+  //    Model WarehouseComponent sudah dihapus dan digabung ke sini.
+  //    Gudang utama MAUPUN depo (farmasi, apotek, dsb) kini
+  //    dibuat sebagai baris pada tabel Warehouses yang sama,
+  //    dibedakan oleh kolom `type`.
   // ==========================================
-  const centralWarehouse = await prisma.warehouse.create({
+  const centralWarehouse = await prisma.warehouses.create({
     data: {
       hospital_id: hospital.id,
       name: 'Gudang Utama Logistik Medis',
+      type: 'MAIN',
       description: 'Pusat penyimpanan utama barang farmasi dan alkes',
     },
   });
-  console.log('✅ 7. Tabel Warehouse seeded.');
 
-  // ==========================================
-  // 9. SEED WAREHOUSE COMPONENT (Tabel: WarehouseComponent)
-  // ==========================================
-  const prescriptionDepot = await prisma.warehouseComponent.create({
+  const prescriptionDepot = await prisma.warehouses.create({
     data: {
       hospital_id: hospital.id,
-      warehouse_id: centralWarehouse.id,
       name: 'Depo Farmasi Resep (Rawat Jalan)',
-      type: 'PHARMACY_PRESCRIPTION',
+      type: 'PHARMACY',
+      description: 'Depo farmasi untuk pelayanan resep rawat jalan',
     },
   });
 
-  await prisma.warehouseComponent.create({
+  await prisma.warehouses.create({
     data: {
       hospital_id: hospital.id,
-      warehouse_id: centralWarehouse.id,
       name: 'Apotek Umum / Retail RS',
-      type: 'PHARMACY_RETAIL',
+      type: 'PHARMACY',
+      description: 'Apotek retail rumah sakit',
     },
   });
-  console.log('✅ 8. Tabel WarehouseComponent seeded.');
+  console.log('✅ 7. Tabel Warehouses seeded (Gudang Utama + Depo Farmasi + Apotek Retail).');
 
   // ==========================================
-  // 10. SEED WAREHOUSE STOCK (Tabel: WarehouseStock)
+  // 9. SEED WAREHOUSE STOCK (Tabel: WarehouseStock)
   //     PENTING: warehouse_id WAJIB diisi (String, bukan optional).
   //     Menghilangkannya membuat Prisma jatuh ke input "checked" dan
   //     memunculkan error menyesatkan: "Argument `product` is missing".
-  //     warehouse_component_id hanya penanda lokasi fisik (opsional).
+  //     warehouse_id kini langsung menunjuk ke tabel Warehouses.
   // ==========================================
   await prisma.warehouseStock.create({
     data: {
@@ -461,17 +461,17 @@ async function main() {
   await prisma.warehouseStock.create({
     data: {
       product_id: amlodipin.id,
-      warehouse_id: centralWarehouse.id,
-      warehouse_component_id: prescriptionDepot.id,
+      warehouse_id: prescriptionDepot.id,
       stock: 150,
       min_stock: 15,
     },
   });
-  console.log('✅ 9. Tabel WarehouseStock seeded.');
+  console.log('✅ 8. Tabel WarehouseStock seeded.');
 
   // ==========================================
-  // 11. SEED STOCK BATCH (Tabel: StockBatch - FEFO)
-  //     warehouse_id juga WAJIB diisi di sini.
+  // 10. SEED STOCK BATCH (Tabel: StockBatch - FEFO)
+  //     warehouse_id juga WAJIB diisi di sini dan
+  //     menunjuk langsung ke tabel Warehouses.
   // ==========================================
   await prisma.stockBatch.create({
     data: {
@@ -489,18 +489,17 @@ async function main() {
     data: {
       hospital_id: hospital.id,
       product_id: amlodipin.id,
-      warehouse_id: centralWarehouse.id,
-      warehouse_component_id: prescriptionDepot.id,
+      warehouse_id: prescriptionDepot.id,
       batch_number: 'BATCH-AML-2026Y',
       exp_date: new Date('2027-08-15'),
       initial_stock: 150,
       current_stock: 150,
     },
   });
-  console.log('✅ 10. Tabel StockBatch seeded.');
+  console.log('✅ 9. Tabel StockBatch seeded.');
 
   // ==========================================
-  // 12. SEED INVENTORY LOGS (Tabel: InventoryLogs)
+  // 11. SEED INVENTORY LOGS (Tabel: InventoryLogs)
   //     PENTING: InventoryLogs.user_id mengarah ke tabel User
   //     (relasi "UserWriter"), BUKAN ke tabel Employee. Mengirim
   //     Employee.id ke sini memicu error:
@@ -520,10 +519,10 @@ async function main() {
       notes: 'Pembelian awal stok gudang utama',
     },
   });
-  console.log('✅ 11. Tabel InventoryLogs seeded.');
+  console.log('✅ 10. Tabel InventoryLogs seeded.');
 
   // ==========================================
-  // 13. SEED PATIENT ALLERGY (Tabel: PatientAllergy)
+  // 12. SEED PATIENT ALLERGY (Tabel: PatientAllergy)
   // ==========================================
   await prisma.patientAllergy.create({
     data: {
@@ -535,10 +534,10 @@ async function main() {
       reaction: 'Anafilaksis / Sesak napas & biduran',
     },
   });
-  console.log('✅ 12. Tabel PatientAllergy seeded.');
+  console.log('✅ 11. Tabel PatientAllergy seeded.');
 
   // ==========================================
-  // 14. SEED DOCTOR PRACTICE (Tabel: DoctorPractice)
+  // 13. SEED DOCTOR PRACTICE (Tabel: DoctorPractice)
   // ==========================================
   const doctorPractice = await prisma.doctorPractice.create({
     data: {
@@ -546,10 +545,10 @@ async function main() {
       practice_date: new Date(),
     },
   });
-  console.log('✅ 13. Tabel DoctorPractice seeded.');
+  console.log('✅ 12. Tabel DoctorPractice seeded.');
 
   // ==========================================
-  // 15. SEED SLOT PRACTICE (Tabel: SlotPractice)
+  // 14. SEED SLOT PRACTICE (Tabel: SlotPractice)
   // ==========================================
   const slotPractice = await prisma.slotPractice.create({
     data: {
@@ -561,10 +560,10 @@ async function main() {
       max_patient: 20,
     },
   });
-  console.log('✅ 14. Tabel SlotPractice seeded.');
+  console.log('✅ 13. Tabel SlotPractice seeded.');
 
   // ==========================================
-  // 16. SEED DOCTOR APPOINTMENT (Tabel: DoctorAppoinment)
+  // 15. SEED DOCTOR APPOINTMENT (Tabel: DoctorAppoinment)
   // ==========================================
   const appointment = await prisma.doctorAppoinment.create({
     data: {
@@ -574,10 +573,10 @@ async function main() {
       queue_number: 1,
     },
   });
-  console.log('✅ 15. Tabel DoctorAppoinment seeded.');
+  console.log('✅ 14. Tabel DoctorAppoinment seeded.');
 
   // ==========================================
-  // 17. SEED VISIT (Tabel: Visit with service_unit)
+  // 16. SEED VISIT (Tabel: Visit with service_unit)
   // ==========================================
   const visit = await prisma.visit.create({
     data: {
@@ -590,10 +589,10 @@ async function main() {
       detail_sympton: 'Nyeri saat menelan ludah dan makanan',
     },
   });
-  console.log('✅ 16. Tabel Visit seeded.');
+  console.log('✅ 15. Tabel Visit seeded.');
 
   // ==========================================
-  // 18. SEED NURSING ASSESSMENT (Tabel: NursingAssesment)
+  // 17. SEED NURSING ASSESSMENT (Tabel: NursingAssesment)
   // ==========================================
   await prisma.nursingAssesment.create({
     data: {
@@ -610,10 +609,10 @@ async function main() {
       notes: 'Triage awal: Pasien sadar, demam hangat.',
     },
   });
-  console.log('✅ 17. Tabel NursingAssesment seeded.');
+  console.log('✅ 16. Tabel NursingAssesment seeded.');
 
   // ==========================================
-  // 19. SEED DOCTOR ASSESSMENT (Tabel: DoctorAssesment)
+  // 18. SEED DOCTOR ASSESSMENT (Tabel: DoctorAssesment)
   // ==========================================
   await prisma.doctorAssesment.create({
     data: {
@@ -627,10 +626,10 @@ async function main() {
       doctorNotes: 'Anjurkan banyak minum air putih dan istirahat total.',
     },
   });
-  console.log('✅ 18. Tabel DoctorAssesment seeded.');
+  console.log('✅ 17. Tabel DoctorAssesment seeded.');
 
   // ==========================================
-  // 20. SEED DOCTOR RECIPE (Tabel: DoctorRecipe)
+  // 19. SEED DOCTOR RECIPE (Tabel: DoctorRecipe)
   // ==========================================
   const doctorRecipe = await prisma.doctorRecipe.create({
     data: {
@@ -646,10 +645,10 @@ async function main() {
       verify_notes: 'Resep terverifikasi aman, tidak ada konflik alergi.',
     },
   });
-  console.log('✅ 19. Tabel DoctorRecipe seeded.');
+  console.log('✅ 18. Tabel DoctorRecipe seeded.');
 
   // ==========================================
-  // 21. SEED RECIPE DETAIL (Tabel: RecipeDetail)
+  // 20. SEED RECIPE DETAIL (Tabel: RecipeDetail)
   // ==========================================
   const today = new Date();
   const futureDate = new Date();
@@ -668,10 +667,10 @@ async function main() {
       end_date: futureDate,
     },
   });
-  console.log('✅ 20. Tabel RecipeDetail seeded.');
+  console.log('✅ 19. Tabel RecipeDetail seeded.');
 
   // ==========================================
-  // 22. SEED BILLING & BILLING ITEMS (Tabel Baru)
+  // 21. SEED BILLING & BILLING ITEMS (Tabel Baru)
   //     qty obat disamakan dengan resep (15) supaya item_name,
   //     subtotal, dan total_amount konsisten.
   // ==========================================
@@ -714,7 +713,7 @@ async function main() {
       subtotal: DRUG_SUBTOTAL,
     },
   });
-  console.log('✅ 21. Tabel Billing & BillingItem seeded.');
+  console.log('✅ 20. Tabel Billing & BillingItem seeded.');
 
   console.log('🎉 Seeding ALL TABLES (with new fields & billing) selesai dengan sukses!');
   console.log('🔑 Akun seed (email / password):');

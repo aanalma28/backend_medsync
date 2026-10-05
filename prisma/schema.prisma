@@ -105,10 +105,14 @@ enum ServiceUnit{
   RADIOLOGY  
 }
 
-// Tipe lokasi penyimpanan fisik (model warehouse flat)
+// Tipe lokasi penyimpanan fisik.
+// Karena WarehouseComponent sudah dihapus, seluruh lokasi
+// (Gudang Utama, Depo Farmasi, Depo Lab, Depo Poli, IGD)
+// kini hidup sebagai baris di satu tabel `Warehouses`
+// dan dibedakan melalui `type` ini.
 enum WarehouseType {
   MAIN        // Gudang Utama Logistik
-  PHARMACY    // Depo Farmasi
+  PHARMACY    // Depo Farmasi / Apotek
   LABORATORY  // Depo Laboratorium
   POLI        // Depo Poli
   IGD         // Depo IGD
@@ -166,8 +170,7 @@ model Hospital {
   hospitalPatientAllergy PatientAllergy[] @relation("HospitalPatientAllergy")
   hospitalProducts      Products[] @relation("HospitalProducts")
   hospitalStockBatch    StockBatch[] @relation("HospitalStockBatch")
-  hospitalWarehouse       Warehouse[] @relation("HospitalWarehouse")
-  hospitalWarehouseComponent WarehouseComponent[]  @relation("HospitalWarehouseComponent")
+  hospitalWarehouses    Warehouses[] @relation("HospitalWarehouses")
   billingHospital      Billing[] @relation("BillingHospital")
 
   @@index([user_id])
@@ -269,17 +272,22 @@ model Products {
 }
 
 // ==========================================
-// 2. GUDANG UTAMA / PUSAT LOGISTIK
+// 2. GUDANG / DEPO PENYIMPANAN (FLAT)
+//    Satu tabel untuk SEMUA lokasi penyimpanan:
+//    Gudang Utama Logistik (MAIN), Depo Farmasi
+//    (PHARMACY), Depo Lab (LABORATORY), Depo Poli
+//    (POLI), IGD (IGD), dan lainnya (OTHER).
+//    Model WarehouseComponent sudah dihapus dan
+//    digabung ke sini.
 // ==========================================
-model Warehouse {
+model Warehouses {
   id            String               @id @default(cuid())
-  hospital      Hospital             @relation("HospitalWarehouse", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital      Hospital             @relation("HospitalWarehouses", fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id   String
-  name          String               // Cth: "Gudang Utama Logistik Medis"
+  name          String               // Cth: "Gudang Utama Logistik Medis", "Depo Farmasi Resep"
   type          WarehouseType        @default(OTHER)
   description   String?
   
-  components    WarehouseComponent[] @relation("WarehouseComponents")
   stocks        WarehouseStock[]     @relation("WarehouseStocks")
   batches       StockBatch[]         @relation("WarehouseBatches")
   logs          InventoryLogs[]      @relation("WarehouseInventoryLogs")
@@ -294,42 +302,15 @@ model Warehouse {
 }
 
 // ==========================================
-// 3. GUDANG KOMPONEN / DEPO UNIT SATELIT
-// (Disimpan untuk kompatibilitas; modul Logistik
-//  memakai model warehouse flat dan belum memakainya)
-// ==========================================
-model WarehouseComponent {
-  id            String               @id @default(cuid())
-  hospital      Hospital             @relation("HospitalWarehouseComponent", fields: [hospital_id], references: [id], onDelete: Restrict)
-  hospital_id   String
-  warehouse     Warehouse            @relation("WarehouseComponents", fields: [warehouse_id], references: [id], onDelete: Cascade)
-  warehouse_id  String  
-  name          String               // Cth: "Depo Farmasi Resep", "Apotek Retail RS"
-  type          String               // "PHARMACY_PRESCRIPTION", "PHARMACY_RETAIL", "POLI", "LAB", "IGD"
-  
-  stocks        WarehouseStock[] @relation("WarehouseComponentStocks")
-  batches       StockBatch[]     @relation("WarehouseComponentBatches")
-  logs          InventoryLogs[]  @relation("WarehouseComponentInventoryLogs")
-  
-  createdAt     DateTime             @default(now())
-
-  @@index([hospital_id])
-  @@index([warehouse_id])
-}
-
-// ==========================================
-// 4. STOK AKTUAL PER LOKASI
+// 3. STOK AKTUAL PER LOKASI
 // ==========================================
 model WarehouseStock {
   id                     String              @id @default(cuid())
   product                Products            @relation("ProductStocks", fields: [product_id], references: [id], onDelete: Restrict)
   product_id             String  
   
-  warehouse              Warehouse           @relation("WarehouseStocks", fields: [warehouse_id], references: [id], onDelete: Cascade)
+  warehouse              Warehouses          @relation("WarehouseStocks", fields: [warehouse_id], references: [id], onDelete: Cascade)
   warehouse_id           String  
-  
-  warehouseComponent     WarehouseComponent? @relation("WarehouseComponentStocks", fields: [warehouse_component_id], references: [id], onDelete: Cascade)
-  warehouse_component_id String?
   
   stock                  Int                 @default(0)
   min_stock              Int                 @default(5)
@@ -343,7 +324,7 @@ model WarehouseStock {
 }
 
 // ==========================================
-// 5. BATCH & KEDALUWARSA (FEFO SUPPORT)
+// 4. BATCH & KEDALUWARSA (FEFO SUPPORT)
 // ==========================================
 model StockBatch {
   id                     String              @id @default(cuid())
@@ -352,11 +333,8 @@ model StockBatch {
   product                Products            @relation("ProductBatches", fields: [product_id], references: [id], onDelete: Cascade)
   product_id             String
   
-  warehouse              Warehouse           @relation("WarehouseBatches", fields: [warehouse_id], references: [id], onDelete: Cascade)
+  warehouse              Warehouses          @relation("WarehouseBatches", fields: [warehouse_id], references: [id], onDelete: Cascade)
   warehouse_id           String
-  
-  warehouseComponent     WarehouseComponent? @relation("WarehouseComponentBatches", fields: [warehouse_component_id], references: [id], onDelete: Cascade)
-  warehouse_component_id String?
   
   batch_number           String              // Nomor batch pabrik dari faktur
   exp_date               DateTime            // Tanggal kedaluwarsa obat
@@ -372,7 +350,7 @@ model StockBatch {
 }
 
 // ==========================================
-// 6. BUKU BESAR AUDIT MUTASI (INVENTORY LOGS)
+// 5. BUKU BESAR AUDIT MUTASI (INVENTORY LOGS)
 // ==========================================
 model InventoryLogs {
   id                     String              @id @default(cuid())
@@ -381,12 +359,9 @@ model InventoryLogs {
   product                Products            @relation("ProductInventoryLogs", fields: [product_id], references: [id])
   product_id             String
   
-  warehouse              Warehouse           @relation("WarehouseInventoryLogs", fields: [warehouse_id], references: [id])
+  warehouse              Warehouses          @relation("WarehouseInventoryLogs", fields: [warehouse_id], references: [id])
   warehouse_id           String
   
-  warehouseComponent     WarehouseComponent? @relation("WarehouseComponentInventoryLogs", fields: [warehouse_component_id], references: [id])
-  warehouse_component_id String?
-
   user                   User?               @relation("UserWriter", fields: [user_id], references: [id])
   user_id                String?
   
@@ -406,7 +381,7 @@ model InventoryLogs {
 }
 
 // ==========================================
-// 7. PEMAKAIAN BARANG PADA TINDAKAN KLINIS (USAGE)
+// 6. PEMAKAIAN BARANG PADA TINDAKAN KLINIS (USAGE)
 // ==========================================
 model VisitUsage {
   id           String    @id @default(cuid())
@@ -414,7 +389,7 @@ model VisitUsage {
   visit_id     String
   product      Products  @relation("ProductUsages", fields: [product_id], references: [id], onDelete: Restrict)
   product_id   String
-  warehouse    Warehouse @relation("WarehouseUsages", fields: [warehouse_id], references: [id], onDelete: Restrict)
+  warehouse    Warehouses @relation("WarehouseUsages", fields: [warehouse_id], references: [id], onDelete: Restrict)
   warehouse_id String
   employee     Employee? @relation("EmployeeUsages", fields: [employee_id], references: [id], onDelete: SetNull)
   employee_id  String?
@@ -427,7 +402,7 @@ model VisitUsage {
 }
 
 // ==========================================
-// 8. STRUKTUR KLINIS: ALERGI PASIEN
+// 7. STRUKTUR KLINIS: ALERGI PASIEN
 // ==========================================
 model PatientAllergy {
   id          String   @id @default(cuid())
