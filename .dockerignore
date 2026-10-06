@@ -1,0 +1,90 @@
+# ---------------------------------------------------------------------------
+# MedSync backend - .dockerignore
+#
+# Purpose:
+#   1. Keep the Docker build context small (faster builds, less data).
+#   2. Guarantee no secret / local artifact ever lands inside an image layer.
+# ---------------------------------------------------------------------------
+
+# --- Dependencies (reinstalled inside the image) ---
+node_modules
+.pnpm-store
+.npm
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Build output (rebuilt inside the image) ---
+dist
+build
+coverage
+.nyc_output
+*.tsbuildinfo
+
+# --- Prisma 7 self-contained client ---
+# Excluded so the image always regenerates against the target platform.
+generated
+
+# --- Environment files & secrets (NEVER bake these in) ---
+.env
+.env.*
+.env.example
+.env.docker.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.der
+secrets/
+.secrets/
+secret.*
+*credential*
+*service-account*.json
+gcloud-*.json
+
+# --- VCS metadata ---
+.git
+.gitignore
+.gitattributes
+.gitmodules
+
+# --- Editors / OS noise ---
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+logs
+*.log
+
+# --- Tests (not needed at runtime) ---
+test
+tests
+__tests__
+*.spec.ts
+*.e2e-spec.ts
+jest.config.*
+jest-e2e.json
+
+# --- Prisma seeder (dev-only, invoked manually via `tsx prisma/seed.ts`) ---
+prisma/seed.ts
+prisma/seed.js
+
+# --- CI / ops files (not needed inside the image) ---
+.github
+.gitlab
+.gitlab-ci.yml
+.circleci
+Jenkinsfile
+docker-compose*.yml
+docker-compose*.yaml
+Dockerfile
+Dockerfile.*
+.dockerignore
+build-and-push.sh
+*.md

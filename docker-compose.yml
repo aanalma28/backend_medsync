@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# MedSync backend - compose wrapper for local & staging.
+#
+# Runs the API container with RUNTIME environment injection. Secrets live
+# in the local `.env` file (git-ignored, Docker-ignored), never in the image.
+#
+# Usage:
+#   cp .env.docker.example .env       # then fill in real values
+#   docker compose up --build         # build + run
+#   docker compose up -d              # detached
+#   docker compose logs -f api        # tail logs
+#   docker compose down               # stop
+# ---------------------------------------------------------------------------
+
+services:
+  api:
+    image: ${DOCKERHUB_USER:-your-dockerhub-user}/medsync-backend:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: medsync-api
+    restart: unless-stopped
+
+    # RUNTIME environment injection - nothing is baked into the image.
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+
+    ports:
+      - "${PORT:-3000}:3000"
