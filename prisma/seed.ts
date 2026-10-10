@@ -383,6 +383,9 @@ async function main() {
 
   // ==========================================
   // 7. SEED PRODUCTS (Tabel: Products)
+  //    Field `is_active` kini di-seed secara eksplisit (default true),
+  //    selaras dengan penambahan `is_active` pada model Products di
+  //    prisma/schema.prisma. Nilai ini juga menjadi dasar fitur soft delete.
   // ==========================================
   const paracetamol = await prisma.products.create({
     data: {
@@ -393,6 +396,7 @@ async function main() {
       unit: 'Strip',
       buy_price: 2500,
       sell_price: 4000,
+      is_active: true,
     },
   });
 
@@ -405,6 +409,7 @@ async function main() {
       unit: 'Strip',
       buy_price: 4000,
       sell_price: 6500,
+      is_active: true,
     },
   });
   console.log('✅ 6. Tabel Products seeded.');

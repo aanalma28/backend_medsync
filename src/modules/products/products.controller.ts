@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -136,5 +137,22 @@ export class ProductsController {
   ) {
     const user = (request as any).user;
     return this.productsService.restockProduct(user.id, id, restockDto);
+  }
+
+  /**
+   * DELETE /products/:id
+   * Soft-delete a product.
+   *
+   * Meskipun memakai HTTP method DELETE, implementasinya BUKAN menghapus baris
+   * dari database. Service `softDeleteProduct` hanya mengubah flag `is_active`
+   * menjadi false pada tabel `Products`, sehingga produk tidak lagi tampil di
+   * katalog aktif namun seluruh relasi (resep, batch, inventory log, billing)
+   * tetap terjaga.
+   */
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  async remove(@Req() request: Request, @Param('id') id: string) {
+    const user = (request as any).user;
+    return this.productsService.softDeleteProduct(user.id, id);
   }
 }

@@ -250,9 +250,10 @@ model Products {
   code        String
   name        String
   category    Category @default(DRUG)
-  unit        String  
+  unit        String
   buy_price   Float
-  sell_price  Float  
+  sell_price  Float
+  is_active   Boolean  @default(true)
   description String?
 
   createdAt   DateTime @default(now())

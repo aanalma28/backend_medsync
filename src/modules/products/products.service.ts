@@ -87,6 +87,8 @@ export class ProductsService {
    * - `Products` tidak lagi menyimpan `stock`/`min_stock`; nilai stok aktual
    *   berasal dari agregasi `WarehouseStock` pada gudang milik hospital pemilik produk.
    * - `exp_date` berasal dari `StockBatch` (batch terdekat yang masih memiliki sisa).
+   * - `Products.is_active` kini difilter = true, sehingga produk yang di-soft-delete
+   *   tidak lagi muncul pada katalog aktif.
    */
   async findAllProducts(queryDto: QueryProductDto, userId: string) {
     const page = Number(queryDto.page) || 1;
@@ -156,7 +158,8 @@ export class ProductsService {
       LEFT JOIN product_stock  ps ON p."id" = ps."productId"
       LEFT JOIN product_expiry pe ON p."id" = pe."productId"
       WHERE
-        (${search}::text IS NULL OR p."code" ILIKE ${searchPattern} OR p."name" ILIKE ${searchPattern})
+        p."is_active" = true
+        AND (${search}::text IS NULL OR p."code" ILIKE ${searchPattern} OR p."name" ILIKE ${searchPattern})
         AND (${category}::text IS NULL OR p."category"::text = ${category})
         AND (
           ${stockStatus}::text IS NULL
@@ -198,7 +201,8 @@ export class ProductsService {
       JOIN target_hospital th ON p."hospital_id" = th."hospitalId"
       LEFT JOIN product_stock ps ON p."id" = ps."productId"
       WHERE
-        (${search}::text IS NULL OR p."code" ILIKE ${searchPattern} OR p."name" ILIKE ${searchPattern})
+        p."is_active" = true
+        AND (${search}::text IS NULL OR p."code" ILIKE ${searchPattern} OR p."name" ILIKE ${searchPattern})
         AND (${category}::text IS NULL OR p."category"::text = ${category})
         AND (
           ${stockStatus}::text IS NULL
@@ -243,7 +247,8 @@ export class ProductsService {
         )::int AS "outOfStockCount"
       FROM "Products" p
       JOIN target_hospital th ON p."hospital_id" = th."hospitalId"
-      LEFT JOIN product_stock ps ON p."id" = ps."productId";
+      LEFT JOIN product_stock ps ON p."id" = ps."productId"
+      WHERE p."is_active" = true;
     `;
     const lowStockCount = Number(summaryResult[0]?.lowStockCount || 0);
     const outOfStockCount = Number(summaryResult[0]?.outOfStockCount || 0);
@@ -519,6 +524,60 @@ export class ProductsService {
         },
       };
     });
+  }
+
+  /**
+   * Soft-delete a product by flipping its `is_active` flag to false.
+   *
+   * Catatan penting: operasi ini TIDAK menghapus baris dari tabel `Products`.
+   * Sesuai permintaan, "hapus" diimplementasikan sebagai UPDATE `is_active = false`
+   * (soft delete) agar riwayat transaksi, resep, batch, dan inventory log yang
+   * mereferensikan produk tetap utuh (FK onDelete: Restrict tidak terlanggar).
+   *
+   * Hospital di-resolve dari rantai user_id -> Employee -> Departmen -> Warehouses
+   * (helper `resolveUserWarehouse`) sehingga user tidak dapat menonaktifkan
+   * produk milik rumah sakit lain.
+   */
+  async softDeleteProduct(userId: string, id: string) {
+    // 1. Resolve hospital user untuk isolasi data antar rumah sakit.
+    const { hospitalId } = await this.resolveUserWarehouse(userId);
+
+    const existing = await this.db.products.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Produk tidak ditemukan');
+    }
+
+    // 2. Isolasi rumah sakit: cegah menonaktifkan produk milik RS lain.
+    if (existing.hospital_id !== hospitalId) {
+      throw new ForbiddenException(
+        'Anda tidak memiliki akses untuk menghapus produk dari Rumah Sakit lain',
+      );
+    }
+
+    // 3. Guard idempotensi: produk yang sudah non-aktif tidak perlu diproses ulang.
+    if (!existing.is_active) {
+      throw new BadRequestException('Produk sudah dalam status tidak aktif');
+    }
+
+    // 4. SOFT DELETE: ubah flag `is_active` menjadi false (bukan hapus baris).
+    const updated = await this.db.products.update({
+      where: { id },
+      data: { is_active: false },
+    });
+
+    return {
+      statusCode: 200,
+      message: `Produk "${existing.name}" berhasil dinonaktifkan`,
+      data: {
+        id: updated.id,
+        code: updated.code,
+        name: updated.name,
+        is_active: updated.is_active,
+      },
+    };
   }
 
   // ─────────────────────────────────────────────
