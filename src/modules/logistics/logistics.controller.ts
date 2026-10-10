@@ -20,6 +20,7 @@ import { CreateTransferDto } from './dto/create-transfer.dto.js';
 import { CreateAdjustmentDto } from './dto/create-adjustment.dto.js';
 import { QueryStockDto } from './dto/query-stock.dto.js';
 import { QueryInventoryLogDto } from './dto/query-inventory-log.dto.js';
+import { QueryStockBatchDto } from './dto/query-stock-batch.dto.js';
 import { UpdateMinStockDto } from './dto/update-min-stock.dto.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 
@@ -116,6 +117,35 @@ export class LogisticsController {
   ) {
     const user = (request as any).user;
     return this.logisticsService.createPurchase(user.id, dto);
+  }
+
+  /**
+   * GET /logistics/stock-batches
+   * Daftar batch stok beserta tanggal kedaluwarsa (sumber: tabel `StockBatch`).
+   *
+   * Dikelompokkan di bawah section PURCHASE karena batch adalah hasil samping
+   * dari penerimaan barang / restock: setiap penerimaan yang menyertakan
+   * `batch_number` / `exp_date` akan membuat atau menambah baris StockBatch.
+   * Endpoint ini melengkapinya dari sisi BACA (read), sehingga frontend dapat
+   * menampilkan penelusuran FEFO (First Expired First Out).
+   *
+   * Query opsional:
+   *   - page, limit
+   *   - warehouse_id, product_id
+   *   - status: AVAILABLE | NEAR_EXPIRY | EXPIRED | OUT_OF_STOCK
+   *   - exp_date_from, exp_date_to (YYYY-MM-DD, inklusif)
+   *   - search (nomor batch / nama produk / kode produk)
+   *
+   * `hospital_id` di-resolve dari token pemanggil, bukan dari query string.
+   */
+  @Get('stock-batches')
+  @HttpCode(HttpStatus.OK)
+  async findStockBatches(
+    @Req() request: Request,
+    @Query() query: QueryStockBatchDto,
+  ) {
+    const user = (request as any).user;
+    return this.logisticsService.findStockBatches(user.id, query);
   }
 
   // ─────────────────────────────────────────────

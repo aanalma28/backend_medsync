@@ -14,6 +14,7 @@ import { CreateTransferDto } from './dto/create-transfer.dto.js';
 import { CreateAdjustmentDto } from './dto/create-adjustment.dto.js';
 import { QueryStockDto } from './dto/query-stock.dto.js';
 import { QueryInventoryLogDto } from './dto/query-inventory-log.dto.js';
+import { QueryStockBatchDto } from './dto/query-stock-batch.dto.js';
 import { UpdateMinStockDto } from './dto/update-min-stock.dto.js';
 
 /**
@@ -573,6 +574,214 @@ export class LogisticsService {
         },
       };
     });
+  }
+
+  // ─────────────────────────────────────────────
+  // 2b. Riwayat Batch & Kedaluwarsa (STOCK BATCH)
+  // ─────────────────────────────────────────────
+
+  /**
+   * Daftar batch stok (tabel `StockBatch`) milik rumah sakit pemanggil.
+   *
+   * Satu baris = satu nomor batch pada satu produk di satu lokasi penyimpanan,
+   * persis sebagaimana ditulis oleh `createPurchase`. Endpoint ini adalah sisi
+   * BACA dari data tersebut dan dipakai untuk penelusuran FEFO (First Expired
+   * First Out): berapa sisa stok (`current_stock`) dari stok awal
+   * (`initial_stock`) dan kapan batch kedaluwarsa (`exp_date`).
+   *
+   * Isolasi tenant: `hospital_id` diambil dari `resolveHospitalId(userId)`,
+   * BUKAN dari query string.
+   *
+   * Catatan agregasi: blok `summary` memakai filter DASAR (tanpa `status`) agar
+   * user tetap melihat gambaran total rumah sakit ketika sedang menyaring satu
+   * status tertentu. `meta.total` mengikuti filter `status` (untuk paginasi).
+   */
+  async findStockBatches(userId: string, query: QueryStockBatchDto) {
+    const hospitalId = await this.resolveHospitalId(userId);
+
+    const page = this.toPositiveInt(query.page, 1);
+    const limit = this.toPositiveInt(query.limit, 20, 200);
+    const skip = (page - 1) * limit;
+
+    const now = new Date();
+    const ninetyDaysFromNow = new Date(now);
+    ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90);
+
+    // ── Filter dasar: berlaku untuk list maupun summary ──
+    const baseWhere: any = { hospital_id: hospitalId };
+
+    if (query.product_id) baseWhere.product_id = query.product_id;
+    if (query.warehouse_id) baseWhere.warehouse_id = query.warehouse_id;
+
+    if (query.exp_date_from || query.exp_date_to) {
+      baseWhere.exp_date = {};
+      if (query.exp_date_from) {
+        baseWhere.exp_date.gte = this.toDate(
+          query.exp_date_from,
+          'exp_date_from',
+        );
+      }
+      if (query.exp_date_to) {
+        const endOfDay = this.toDate(query.exp_date_to, 'exp_date_to');
+        endOfDay.setHours(23, 59, 59, 999);
+        baseWhere.exp_date.lte = endOfDay;
+      }
+    }
+
+    if (query.search && query.search.trim() !== '') {
+      const search = query.search.trim();
+      baseWhere.OR = [
+        { batch_number: { contains: search, mode: 'insensitive' } },
+        { product: { name: { contains: search, mode: 'insensitive' } } },
+        { product: { code: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
+    // ── Filter status: mempersempit list (bukan summary) ──
+    const where: any = { ...baseWhere };
+    const status = query.status?.trim().toUpperCase() || null;
+
+    if (status === 'EXPIRED') {
+      where.exp_date = { ...(where.exp_date || {}), lt: now };
+      where.current_stock = { gt: 0 };
+    } else if (status === 'NEAR_EXPIRY') {
+      where.exp_date = {
+        ...(where.exp_date || {}),
+        gte: now,
+        lte: ninetyDaysFromNow,
+      };
+      where.current_stock = { gt: 0 };
+    } else if (status === 'OUT_OF_STOCK') {
+      where.current_stock = { lte: 0 };
+    } else if (status === 'AVAILABLE') {
+      where.current_stock = { gt: 0 };
+    }
+
+    const [
+      total,
+      batches,
+      aggregate,
+      expiredBatches,
+      nearExpiryBatches,
+      emptyBatches,
+    ] = await Promise.all([
+      this.db.stockBatch.count({ where }),
+      this.db.stockBatch.findMany({
+        where,
+        skip,
+        take: limit,
+        // FEFO: batch dengan kedaluwarsa terdekat tampil paling atas.
+        orderBy: [{ exp_date: 'asc' }, { createdAt: 'asc' }],
+        include: {
+          product: {
+            select: {
+              id: true,
+              code: true,
+              name: true,
+              unit: true,
+              category: true,
+            },
+          },
+          warehouse: { select: { id: true, name: true, type: true } },
+        },
+      }),
+      this.db.stockBatch.aggregate({
+        where: baseWhere,
+        _count: { _all: true },
+        _sum: { initial_stock: true, current_stock: true },
+      }),
+      this.db.stockBatch.count({
+        where: {
+          ...baseWhere,
+          current_stock: { gt: 0 },
+          exp_date: { lt: now },
+        },
+      }),
+      this.db.stockBatch.count({
+        where: {
+          ...baseWhere,
+          current_stock: { gt: 0 },
+          exp_date: { gte: now, lte: ninetyDaysFromNow },
+        },
+      }),
+      this.db.stockBatch.count({
+        where: { ...baseWhere, current_stock: { lte: 0 } },
+      }),
+    ]);
+
+    const data = batches.map((batch: any) => {
+      const expDate = batch.exp_date ? new Date(batch.exp_date) : null;
+      const currentStock = Number(batch.current_stock ?? 0);
+      const initialStock = Number(batch.initial_stock ?? 0);
+
+      const isExpired = expDate ? expDate < now : false;
+      const isNearExpiry = expDate
+        ? !isExpired && expDate <= ninetyDaysFromNow
+        : false;
+      const isEmpty = currentStock <= 0;
+
+      return {
+        id: batch.id,
+        batch_number: batch.batch_number,
+        exp_date: batch.exp_date,
+        buy_price: batch.buy_price,
+        initial_stock: initialStock,
+        current_stock: currentStock,
+        // Sisa stok dalam persen — 100 berarti batch belum tersentuh.
+        remaining_percentage:
+          initialStock > 0
+            ? Math.round((currentStock / initialStock) * 100)
+            : 0,
+        status: isEmpty
+          ? 'OUT_OF_STOCK'
+          : isExpired
+            ? 'EXPIRED'
+            : isNearExpiry
+              ? 'NEAR_EXPIRY'
+              : 'AVAILABLE',
+        is_empty: isEmpty,
+        is_expired: isExpired,
+        is_near_expiry: isNearExpiry,
+        product: batch.product
+          ? {
+              id: batch.product.id,
+              code: batch.product.code,
+              name: batch.product.name,
+              unit: batch.product.unit,
+              category: batch.product.category,
+            }
+          : null,
+        warehouse: batch.warehouse
+          ? {
+              id: batch.warehouse.id,
+              name: batch.warehouse.name,
+              type: batch.warehouse.type,
+            }
+          : null,
+        createdAt: batch.createdAt,
+        updatedAt: batch.updatedAt,
+      };
+    });
+
+    return {
+      statusCode: 200,
+      message: 'Berhasil mengambil data batch stok',
+      data,
+      summary: {
+        total_batches: Number(aggregate?._count?._all || 0),
+        total_initial_stock: Number(aggregate?._sum?.initial_stock || 0),
+        total_current_stock: Number(aggregate?._sum?.current_stock || 0),
+        total_expired_batches: expiredBatches,
+        total_near_expiry_batches: nearExpiryBatches,
+        total_empty_batches: emptyBatches,
+      },
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
   }
 
   // ─────────────────────────────────────────────
