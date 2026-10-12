@@ -501,7 +501,7 @@ export class LogisticsService {
               .slice(0, 10)
               .replace(/-/g, '')}-${product.code}`;
 
-          await tx.stockBatch.upsert({
+          const newStockBatch = await tx.stockBatch.upsert({
             where: {
               product_id_warehouse_id_batch_number: {
                 product_id: product.id,
@@ -518,6 +518,9 @@ export class LogisticsService {
               buy_price: item.buy_price,
               initial_stock: item.quantity,
               current_stock: item.quantity,
+              reference_number: dto.reference_number,
+              supplier_name: dto.supplier_name,
+              notes: dto.notes || `Penerimaan barang dari supplier ke ${warehouse.name}`,
             },
             update: {
               current_stock: { increment: item.quantity },
@@ -547,15 +550,19 @@ export class LogisticsService {
         });
 
         processedItems.push({
+          id: newStockBatch?.id || null,
+          batch_number: batchNumber,
+          exp_date: expDate,
+          buy_price: item.buy_price,
+          initial_stock: item.quantity,
+          current_stock: stockRow.stock,
+          remaining_percentage: item.quantity > 0 ? Math.round((stockRow.stock / item.quantity) * 100) : 0,          
           product_id: product.id,
           product_code: product.code,
           product_name: product.name,
           unit: product.unit,
-          quantity_received: item.quantity,
-          buy_price: item.buy_price,
-          batch_number: batchNumber,
-          exp_date: expDate,
-          current_stock: stockRow.stock,
+          supplier_name: dto.supplier_name || null,
+          reference_number: dto.reference_number || null,
         });
       }
 
@@ -568,8 +575,6 @@ export class LogisticsService {
             name: warehouse.name,
             type: warehouse.type,
           },
-          supplier_name: dto.supplier_name || null,
-          reference_number: dto.reference_number || null,
           items: processedItems,
         },
       };

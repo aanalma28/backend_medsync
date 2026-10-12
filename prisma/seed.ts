@@ -494,6 +494,9 @@ async function main() {
       exp_date: new Date('2028-11-30'),
       initial_stock: 500,
       current_stock: 500,
+      reference_number: 'PO-2026-001',
+      supplier_name: 'PT Kimia Farma Utama',
+      notes: 'Batch pertama untuk gudang utama',
     },
   });
 
@@ -506,6 +509,9 @@ async function main() {
       exp_date: new Date('2027-08-15'),
       initial_stock: 150,
       current_stock: 150,
+      reference_number: 'PO-2026-002',
+      supplier_name: 'PT Kalbe Farma Tbk',
+      notes: 'Batch pertama untuk depo farmasi resep',
     },
   });
   console.log('✅ 9. Tabel StockBatch seeded.');

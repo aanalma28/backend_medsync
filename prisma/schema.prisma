@@ -353,6 +353,9 @@ model StockBatch {
   buy_price              Float?              // Harga beli per batch (harga saat penerimaan)
   initial_stock          Int                 // Jumlah awal batch masuk
   current_stock          Int                 // Sisa kuantiti aktual batch ini
+  reference_number       String?             // No PO, No Faktur, No Amprahan, No Resep
+  supplier_name          String?             // Nama supplier / distributor
+  notes                  String?
   
   createdAt              DateTime            @default(now())
 
