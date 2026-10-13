@@ -73,7 +73,7 @@ export class AuthController {
       response.cookie('remember_token', result.rememberToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
         path: '/',
       });
@@ -141,7 +141,7 @@ export class AuthController {
       response.cookie('csrf_token', result.csrfToken, {
         httpOnly: false,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 15 * 60 * 1000, // 15 minutes
         path: '/',
       });
