@@ -455,8 +455,6 @@ export class LogisticsService {
         dto.items.map((item) => item.product_id),
       );
 
-      const processedItems: any[] = [];
-
       for (const item of dto.items) {
         const product = productMap.get(item.product_id);
 
@@ -548,8 +546,17 @@ export class LogisticsService {
               `Penerimaan barang dari supplier ke ${warehouse.name}`,
           },
         });
+      }
 
-        processedItems.push({
+      return {
+        statusCode: 201,
+        message: `Penerimaan barang berhasil dicatat (${processedItems.length} item)`,
+        data: {
+          warehouse: {
+            id: warehouse.id,
+            name: warehouse.name,
+            type: warehouse.type,
+          },
           id: newStockBatch?.id || null,
           batch_number: batchNumber,
           exp_date: expDate,
@@ -563,19 +570,6 @@ export class LogisticsService {
           unit: product.unit,
           supplier_name: dto.supplier_name || null,
           reference_number: dto.reference_number || null,
-        });
-      }
-
-      return {
-        statusCode: 201,
-        message: `Penerimaan barang berhasil dicatat (${processedItems.length} item)`,
-        data: {
-          warehouse: {
-            id: warehouse.id,
-            name: warehouse.name,
-            type: warehouse.type,
-          },
-          items: processedItems,
         },
       };
     });
