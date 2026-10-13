@@ -45,7 +45,7 @@ export class AuthController {
    * Rate limit: 5 requests per 60 seconds (brute force protection)
    *
    * Response:
-   * - JSON body: { statusCode, message, data: { accessToken, user } }
+   * - JSON body: { statusCode, message, data: { accessToken, csrfToken, user } }
    * - Cookie: remember_token (HttpOnly, Secure, SameSite=Lax, 30 days) — only if remember_me is true
    * - Cookie: csrf_token (non-HttpOnly, SameSite=Lax, 15 min)
    */
@@ -85,6 +85,7 @@ export class AuthController {
       message: 'Login berhasil',
       data: {
         accessToken: result.accessToken,
+        csrfToken: result.csrfToken,
         user: result.user,
       },
     };
@@ -117,7 +118,7 @@ export class AuthController {
    * Rate limit: 10 requests per 60 seconds
    *
    * On success:
-   * - JSON body: { statusCode, message, data: { accessToken, user } }
+   * - JSON body: { statusCode, message, data: { accessToken, csrfToken, user } }
    * - Cookie: csrf_token (refreshed, 15 min)
    *
    * On failure (401):
@@ -152,6 +153,7 @@ export class AuthController {
         message: 'Token berhasil diperbarui',
         data: {
           accessToken: result.accessToken,
+          csrfToken: result.csrfToken,
           user: result.user,
         },
       };
