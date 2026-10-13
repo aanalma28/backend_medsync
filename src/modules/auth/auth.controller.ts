@@ -63,7 +63,7 @@ export class AuthController {
     response.cookie('csrf_token', result.csrfToken, {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 15 * 60 * 1000, // 15 minutes (aligned with JWT lifespan)
       path: '/',
     });
