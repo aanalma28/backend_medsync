@@ -492,6 +492,7 @@ export class LogisticsService {
 
         // 2. Catat batch / kedaluwarsa bila tersedia
         let batchNumber: string | null = null;
+        let stockBatchId: string | null = null;
 
         if (item.batch_number || expDate) {
           batchNumber =
@@ -529,6 +530,7 @@ export class LogisticsService {
               buy_price: item.buy_price,
             },
           });
+          stockBatchId = newStockBatch.id;
         }
 
         // 3. Tulis baris audit
@@ -550,7 +552,7 @@ export class LogisticsService {
         });
 
         processedItems.push({
-          id: newStockBatch?.id || null,
+          id: stockBatchId,
           batch_number: batchNumber,
           exp_date: expDate,
           buy_price: item.buy_price,
