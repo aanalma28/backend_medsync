@@ -120,7 +120,7 @@ export class LogisticsService {
     hospitalId: string,
     warehouseId: string,
   ) {
-    const warehouse = await tx.warehouse.findFirst({
+    const warehouse = await tx.warehouses.findFirst({
       where: { id: warehouseId, hospital_id: hospitalId },
       select: { id: true, name: true, type: true },
     });
@@ -146,7 +146,7 @@ export class LogisticsService {
       return this.findWarehouseOrFail(tx, hospitalId, warehouseId);
     }
 
-    const mainWarehouse = await tx.warehouse.findFirst({
+    const mainWarehouse = await tx.warehouses.findFirst({
       where: { hospital_id: hospitalId, type: 'MAIN' },
       select: { id: true, name: true, type: true },
     });
@@ -206,7 +206,7 @@ export class LogisticsService {
     const hospitalId = await this.resolveHospitalId(userId);
     const warehouseType = dto.type || 'OTHER';
 
-    const duplicateName = await this.db.warehouse.findFirst({
+    const duplicateName = await this.db.warehouses.findFirst({
       where: { hospital_id: hospitalId, name: dto.name },
       select: { id: true },
     });
@@ -218,7 +218,7 @@ export class LogisticsService {
     }
 
     if (warehouseType === 'MAIN') {
-      const existingMain = await this.db.warehouse.findFirst({
+      const existingMain = await this.db.warehouses.findFirst({
         where: { hospital_id: hospitalId, type: 'MAIN' },
         select: { id: true, name: true },
       });
@@ -230,7 +230,7 @@ export class LogisticsService {
       }
     }
 
-    const warehouse = await this.db.warehouse.create({
+    const warehouse = await this.db.warehouses.create({
       data: {
         hospital_id: hospitalId,
         name: dto.name,
@@ -267,8 +267,8 @@ export class LogisticsService {
     }
 
     const [total, warehouses] = await Promise.all([
-      this.db.warehouse.count({ where }),
-      this.db.warehouse.findMany({
+      this.db.warehouses.count({ where }),
+      this.db.warehouses.findMany({
         where,
         skip,
         take: limit,
@@ -322,7 +322,7 @@ export class LogisticsService {
   async findWarehouseById(userId: string, warehouseId: string) {
     const hospitalId = await this.resolveHospitalId(userId);
 
-    const warehouse = await this.db.warehouse.findFirst({
+    const warehouse = await this.db.warehouses.findFirst({
       where: { id: warehouseId, hospital_id: hospitalId },
     });
 
@@ -372,7 +372,7 @@ export class LogisticsService {
   ) {
     const hospitalId = await this.resolveHospitalId(userId);
 
-    const warehouse = await this.db.warehouse.findFirst({
+    const warehouse = await this.db.warehouses.findFirst({
       where: { id: warehouseId, hospital_id: hospitalId },
       select: { id: true, name: true, type: true },
     });
@@ -384,7 +384,7 @@ export class LogisticsService {
     }
 
     if (dto.name && dto.name !== warehouse.name) {
-      const duplicateName = await this.db.warehouse.findFirst({
+      const duplicateName = await this.db.warehouses.findFirst({
         where: {
           hospital_id: hospitalId,
           name: dto.name,
@@ -401,7 +401,7 @@ export class LogisticsService {
     }
 
     if (dto.type === 'MAIN' && warehouse.type !== 'MAIN') {
-      const existingMain = await this.db.warehouse.findFirst({
+      const existingMain = await this.db.warehouses.findFirst({
         where: {
           hospital_id: hospitalId,
           type: 'MAIN',
@@ -423,7 +423,7 @@ export class LogisticsService {
     if (dto.type !== undefined) data.type = dto.type;
     if (dto.description !== undefined) data.description = dto.description;
 
-    const updated = await this.db.warehouse.update({
+    const updated = await this.db.warehouses.update({
       where: { id: warehouseId },
       data,
     });
@@ -1251,7 +1251,7 @@ export class LogisticsService {
       const warehouseIds = [
         ...new Set(dto.items.map((item) => item.warehouse_id)),
       ];
-      const warehouses = await tx.warehouse.findMany({
+      const warehouses = await tx.warehouses.findMany({
         where: { id: { in: warehouseIds }, hospital_id: hospitalId },
         select: { id: true, name: true },
       });
