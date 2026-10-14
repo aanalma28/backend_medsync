@@ -22,6 +22,7 @@ import { QueryStockDto } from './dto/query-stock.dto.js';
 import { QueryInventoryLogDto } from './dto/query-inventory-log.dto.js';
 import { QueryStockBatchDto } from './dto/query-stock-batch.dto.js';
 import { QueryRequisitionDto } from './dto/query-requisition.dto.js';
+import { UpdateRequisitionDto } from './dto/update-requisition.dto.js';
 import { UpdateMinStockDto } from './dto/update-min-stock.dto.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 
@@ -183,6 +184,21 @@ export class LogisticsController {
   ) {
     const user = (request as any).user;
     return this.logisticsService.findRequisitions(user.id, query);
+  }
+
+  /**
+   * PATCH /logistics/requisitions/:id
+   * Menyetujui penuh/sebagian atau menolak requisition yang masih dapat diedit.
+   */
+  @Patch('requisitions/:id')
+  @HttpCode(HttpStatus.OK)
+  async updateRequisition(
+    @Req() request: Request,
+    @Param('id') id: string,
+    @Body() dto: UpdateRequisitionDto,
+  ) {
+    const user = (request as any).user;
+    return this.logisticsService.updateRequisition(user.id, id, dto);
   }
 
   // ─────────────────────────────────────────────

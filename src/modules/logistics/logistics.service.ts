@@ -16,6 +16,7 @@ import { QueryStockDto } from './dto/query-stock.dto.js';
 import { QueryInventoryLogDto } from './dto/query-inventory-log.dto.js';
 import { QueryStockBatchDto } from './dto/query-stock-batch.dto.js';
 import { QueryRequisitionDto } from './dto/query-requisition.dto.js';
+import { UpdateRequisitionDto } from './dto/update-requisition.dto.js';
 import { UpdateMinStockDto } from './dto/update-min-stock.dto.js';
 
 /**
@@ -1331,6 +1332,167 @@ export class LogisticsService {
         totalPages: Math.ceil(total / limit) || 1,
       },
     };
+  }
+
+  async updateRequisition(
+    userId: string,
+    requisitionId: string,
+    dto: UpdateRequisitionDto,
+  ) {
+    const hospitalId = await this.resolveHospitalId(userId);
+
+    return this.db.$transaction(async (tx: any) => {
+      const requisition = await tx.requisitions.findFirst({
+        where: { id: requisitionId, hospital_id: hospitalId },
+        include: { items: true },
+      });
+
+      if (!requisition) {
+        throw new NotFoundException(
+          'Requisition tidak ditemukan atau bukan milik rumah sakit Anda',
+        );
+      }
+
+      if (!['PENDING', 'PARTIAL'].includes(requisition.status)) {
+        throw new ConflictException(
+          'Hanya requisition berstatus PENDING atau PARTIAL yang dapat diperbarui',
+        );
+      }
+
+      if (requisition.items.length === 0) {
+        throw new BadRequestException(
+          'Requisition tanpa item tidak dapat disetujui atau ditolak',
+        );
+      }
+
+      const itemUpdates = new Map<string, number>();
+      for (const item of dto.items) {
+        if (itemUpdates.has(item.requisition_item_id)) {
+          throw new BadRequestException(
+            'Item requisition yang sama tidak boleh dikirim lebih dari satu kali',
+          );
+        }
+        itemUpdates.set(item.requisition_item_id, item.quantity_approved);
+      }
+
+      if (itemUpdates.size !== requisition.items.length) {
+        throw new BadRequestException(
+          'Semua item requisition harus disertakan tepat satu kali',
+        );
+      }
+
+      for (const item of requisition.items) {
+        if (!itemUpdates.has(item.id)) {
+          throw new BadRequestException(
+            'Terdapat item yang bukan bagian dari requisition ini',
+          );
+        }
+
+        if (dto.status === 'APPROVED') {
+          if (itemUpdates.get(item.id) !== item.quantity_requested) {
+            throw new BadRequestException(
+              'Pada status APPROVED, kuantitas disetujui harus sama dengan kuantitas yang diminta',
+            );
+          }
+        }
+
+        if (dto.status === 'PARTIAL') {
+          const currentApproved = item.quantity_approved ?? 0;
+          const nextApproved = itemUpdates.get(item.id);
+
+          if (
+            nextApproved === undefined ||
+            nextApproved <= 0 ||
+            nextApproved < currentApproved ||
+            nextApproved > item.quantity_requested
+          ) {
+            throw new BadRequestException(
+              `Kuantitas item harus lebih besar dari 0, tidak boleh berkurang dari kuantitas yang telah disetujui (${currentApproved}), dan tidak boleh melebihi kuantitas yang diminta (${item.quantity_requested})`,
+            );
+          }
+        }
+      }
+
+      if (
+        dto.status === 'PARTIAL' &&
+        requisition.items.every((item: any) => {
+          return itemUpdates.get(item.id) === item.quantity_requested;
+        })
+      ) {
+        throw new BadRequestException(
+          'Gunakan status APPROVED jika semua kuantitas disetujui penuh',
+        );
+      }
+
+      const updated = await tx.requisitions.updateMany({
+        where: {
+          id: requisition.id,
+          hospital_id: hospitalId,
+          status: { in: ['PENDING', 'PARTIAL'] },
+          updatedAt: requisition.updatedAt,
+        },
+        data: {
+          status: dto.status,
+          approved_by_id: userId,
+        },
+      });
+
+      if (updated.count !== 1) {
+        throw new ConflictException(
+          'Requisition telah berubah. Muat ulang data sebelum mencoba kembali',
+        );
+      }
+
+      if (dto.status !== 'REJECTED') {
+        for (const item of requisition.items) {
+          await tx.requisitionItems.update({
+            where: { id: item.id },
+            data: { quantity_approved: itemUpdates.get(item.id)! },
+          });
+        }
+      }
+
+      const result = await tx.requisitions.findUnique({
+        where: { id: requisition.id },
+        include: {
+          requesting_warehouse: {
+            select: { id: true, name: true, type: true },
+          },
+          target_warehouse: {
+            select: { id: true, name: true, type: true },
+          },
+          requested_by: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+          approved_by: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+          items: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  category: true,
+                  unit: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return {
+        statusCode: 200,
+        message:
+          dto.status === 'REJECTED'
+            ? 'Requisition berhasil ditolak'
+            : 'Requisition berhasil diperbarui',
+        data: result,
+      };
+    });
   }
 
   // ─────────────────────────────────────────────
