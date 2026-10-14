@@ -21,6 +21,7 @@ import { CreateAdjustmentDto } from './dto/create-adjustment.dto.js';
 import { QueryStockDto } from './dto/query-stock.dto.js';
 import { QueryInventoryLogDto } from './dto/query-inventory-log.dto.js';
 import { QueryStockBatchDto } from './dto/query-stock-batch.dto.js';
+import { QueryRequisitionDto } from './dto/query-requisition.dto.js';
 import { UpdateMinStockDto } from './dto/update-min-stock.dto.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 
@@ -164,6 +165,24 @@ export class LogisticsController {
   ) {
     const user = (request as any).user;
     return this.logisticsService.createTransfer(user.id, dto);
+  }
+
+  // ─────────────────────────────────────────────
+  // Requisition
+  // ─────────────────────────────────────────────
+
+  /**
+   * GET /logistics/requisitions
+   * Daftar requisition rumah sakit pemanggil beserta detail produk setiap item.
+   */
+  @Get('requisitions')
+  @HttpCode(HttpStatus.OK)
+  async findRequisitions(
+    @Req() request: Request,
+    @Query() query: QueryRequisitionDto,
+  ) {
+    const user = (request as any).user;
+    return this.logisticsService.findRequisitions(user.id, query);
   }
 
   // ─────────────────────────────────────────────

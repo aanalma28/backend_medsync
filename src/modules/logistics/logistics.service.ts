@@ -15,6 +15,7 @@ import { CreateAdjustmentDto } from './dto/create-adjustment.dto.js';
 import { QueryStockDto } from './dto/query-stock.dto.js';
 import { QueryInventoryLogDto } from './dto/query-inventory-log.dto.js';
 import { QueryStockBatchDto } from './dto/query-stock-batch.dto.js';
+import { QueryRequisitionDto } from './dto/query-requisition.dto.js';
 import { UpdateMinStockDto } from './dto/update-min-stock.dto.js';
 
 /**
@@ -1224,6 +1225,105 @@ export class LogisticsService {
       statusCode: 200,
       message: 'Berhasil mengambil riwayat mutasi stok',
       data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────
+  // Requisition
+  // ─────────────────────────────────────────────
+
+  async findRequisitions(userId: string, query: QueryRequisitionDto) {
+    const hospitalId = await this.resolveHospitalId(userId);
+    const page = this.toPositiveInt(query.page, 1);
+    const limit = this.toPositiveInt(query.limit, 20, 100);
+    const skip = (page - 1) * limit;
+
+    const where: any = { hospital_id: hospitalId };
+
+    if (query.status) where.status = query.status;
+    if (query.warehouse_id) {
+      where.OR = [
+        { requesting_warehouse_id: query.warehouse_id },
+        { target_warehouse_id: query.warehouse_id },
+      ];
+    }
+
+    if (query.search && query.search.trim() !== '') {
+      const search = query.search.trim();
+      const searchConditions = [
+        { requisition_number: { contains: search, mode: 'insensitive' } },
+        { notes: { contains: search, mode: 'insensitive' } },
+        {
+          items: {
+            some: {
+              product: { name: { contains: search, mode: 'insensitive' } },
+            },
+          },
+        },
+        {
+          items: {
+            some: {
+              product: { code: { contains: search, mode: 'insensitive' } },
+            },
+          },
+        },
+      ];
+
+      where.AND = [
+        ...(where.OR ? [{ OR: where.OR }] : []),
+        { OR: searchConditions },
+      ];
+      delete where.OR;
+    }
+
+    const [total, requisitions] = await Promise.all([
+      this.db.requisitions.count({ where }),
+      this.db.requisitions.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          requesting_warehouse: {
+            select: { id: true, name: true, type: true },
+          },
+          target_warehouse: {
+            select: { id: true, name: true, type: true },
+          },
+          requested_by: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+          approved_by: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+          items: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  category: true,
+                  unit: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      statusCode: 200,
+      message: 'Berhasil mengambil daftar requisition',
+      data: requisitions,
       meta: {
         total,
         page,
