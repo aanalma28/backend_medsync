@@ -132,6 +132,15 @@ enum InventoryLogType {
   RETURN         // Pengembalian barang ke gudang
 }
 
+enum RequisitionStatus {
+  PENDING      // Baru diajukan oleh Poli/Unit
+  APPROVED     // Disetujui oleh Gudang Logistik/Farmasi
+  PARTIAL      // Disetujui sebagian
+  REJECTED     // Ditolak
+  DISTRIBUTED  // Barang sudah dikirim/diterima oleh pemohon
+  CANCELLED    // Dibatalkan oleh pemohon
+}
+
 model User {
   id                     String    @id @default(cuid())  
   name                   String?
@@ -152,6 +161,8 @@ model User {
   employeeUser        Employee?         @relation("EmployeeUser")
   inventoryUser       InventoryLogs[]   @relation("UserWriter")
   hospitals           Hospital[]        @relation("HospitalOwner")
+  requestedRequisitions  Requisitions[]    @relation("UserRequestedRequisitions")
+  approvedRequisitions   Requisitions[]    @relation("UserApprovedRequisitions")
 }
 
 model Hospital {
@@ -172,6 +183,7 @@ model Hospital {
   hospitalStockBatch    StockBatch[] @relation("HospitalStockBatch")
   hospitalWarehouses    Warehouses[] @relation("HospitalWarehouses")
   billingHospital      Billing[] @relation("BillingHospital")
+  requisitionsHospital Requisitions[] @relation("RequisitionsHospital")
 
   @@index([user_id])
 }
@@ -269,6 +281,7 @@ model Products {
   batches     StockBatch[]     @relation("ProductBatches")
   billings    BillingItem[]    @relation("BillingProducts")
   usages      VisitUsage[]     @relation("ProductUsages")
+  requisitionItems RequisitionItems[] @relation("RequisitionProduct")
 
   @@unique([hospital_id, code])
   @@index([hospital_id])
@@ -301,8 +314,11 @@ model Warehouses {
   
   stocks        WarehouseStock[]     @relation("WarehouseStocks")
   batches       StockBatch[]         @relation("WarehouseBatches")
-  logs          InventoryLogs[]      @relation("WarehouseInventoryLogs")
+  src_warehouse InventoryLogs[]      @relation("SourceWarehouseInventoryLogs")
+  dst_warehouse InventoryLogs[]      @relation("TargetWarehouseInventoryLogs")
   usages        VisitUsage[]         @relation("WarehouseUsages")
+  requesting_requisitions Requisitions[] @relation("RequestingRequisitions")
+  target_requisitions     Requisitions[] @relation("TargetRequisitions")
   
   createdAt     DateTime             @default(now())
   updatedAt     DateTime             @updatedAt
@@ -359,9 +375,64 @@ model StockBatch {
   
   createdAt              DateTime            @default(now())
 
+  batchInventoryLogs      InventoryLogs[]    @relation("StockBatchInventoryLogs")
+
   @@unique([product_id, warehouse_id, batch_number])
   @@index([hospital_id])
   @@index([product_id, warehouse_id, exp_date])
+}
+
+model Requisitions {
+  id                      String              @id @default(cuid())
+  hospital                Hospital            @relation("RequisitionsHospital", fields: [hospital_id], references: [id], onDelete: Restrict)
+  hospital_id             String
+
+  requisition_number      String              @unique // Contoh: AMP/2026/10/0001
+
+  // Gudang/Poli Pemohon (misal: Poli Anak / Ruang Inap)
+  requesting_warehouse    Warehouses          @relation("RequestingRequisitions", fields: [requesting_warehouse_id], references: [id])
+  requesting_warehouse_id String
+
+  // Gudang/Depo Tujuan (misal: Gudang Utama Logistik / Depo Farmasi Pusat)
+  target_warehouse        Warehouses          @relation("TargetRequisitions", fields: [target_warehouse_id], references: [id])
+  target_warehouse_id     String
+
+  // User Pengaju & User Penyetujui
+  requested_by            User                @relation("UserRequestedRequisitions", fields: [requested_by_id], references: [id])
+  requested_by_id         String
+  approved_by             User?               @relation("UserApprovedRequisitions", fields: [approved_by_id], references: [id])
+  approved_by_id          String?
+
+  status                  RequisitionStatus   @default(PENDING)
+  notes                   String?             // Alasan pengajuan atau alasan penolakan
+  
+  items                   RequisitionItems[] @relation("RequisitionItems")
+
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([hospital_id, status])
+  @@index([requesting_warehouse_id])
+  @@index([target_warehouse_id])
+}
+
+model RequisitionItems {
+  id                  String       @id @default(cuid())
+  requisition         Requisitions @relation("RequisitionItems", fields: [requisition_id], references: [id], onDelete: Cascade)
+  requisition_id      String
+
+  product             Products     @relation("RequisitionProduct", fields: [product_id], references: [id])
+  product_id          String
+
+  quantity_requested  Int          // Jumlah yang diminta oleh poli
+  quantity_approved   Int?         // Jumlah yang disetujui logistik (bisa kurang dari diminta)
+  notes               String?      // Catatan per item
+
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([requisition_id])
+  @@index([product_id])
 }
 
 // ==========================================
@@ -371,19 +442,32 @@ model InventoryLogs {
   id                     String              @id @default(cuid())
   hospital               Hospital            @relation("HospitalInventoryLogs", fields: [hospital_id], references: [id], onDelete: Restrict)
   hospital_id            String
+  
   product                Products            @relation("ProductInventoryLogs", fields: [product_id], references: [id])
   product_id             String
   
-  warehouse              Warehouses          @relation("WarehouseInventoryLogs", fields: [warehouse_id], references: [id])
+  // Gudang Asal tempat mutasi terjadi
+  warehouse              Warehouses          @relation("SourceWarehouseInventoryLogs", fields: [warehouse_id], references: [id])
   warehouse_id           String
+  
+  // Gudang Tujuan (Opsional: diisi jika tipenya TRANSFER_OUT / TRANSFER_IN)
+  target_warehouse       Warehouses?         @relation("TargetWarehouseInventoryLogs", fields: [target_warehouse_id], references: [id])
+  target_warehouse_id    String?
+
+  // Relasi langsung ke Batch (Kunci utama pelacakan FEFO/FIFO di log)
+  stock_batch            StockBatch?         @relation("StockBatchInventoryLogs", fields: [stock_batch_id], references: [id], onDelete: SetNull)
+  stock_batch_id         String?
   
   user                   User?               @relation("UserWriter", fields: [user_id], references: [id])
   user_id                String?
   
-  type                   InventoryLogType    // INITIAL, PURCHASE, TRANSFER_OUT, TRANSFER_IN, DISPENSE, USAGE, ADJUSTMENT, RETURN
+  type                   InventoryLogType    // INITIAL, PURCHASE, RESTOCK, TRANSFER_OUT, TRANSFER_IN, DISPENSE, USAGE, ADJUSTMENT, RETURN
   quantity               Int                 // Nilai mutasi (+ masuk, - keluar)
-  buy_price              Float?              // Harga beli saat mutasi (audit harga)
-  source_destination     String?             // Keterangan pihak luar (Cth: "PT. Kimia Farma")
+  
+  // Snapshot Stok untuk Audit Trail
+  stock_before           Int                 // Stok di warehouse sebelum mutasi
+  stock_after            Int                 // Stok di warehouse setelah mutasi
+  
   reference_number       String?             // No PO, No Faktur, No Amprahan, No Resep  
   notes                  String?
   
@@ -392,6 +476,8 @@ model InventoryLogs {
   @@index([hospital_id, createdAt])
   @@index([product_id])
   @@index([warehouse_id])
+  @@index([target_warehouse_id])
+  @@index([stock_batch_id])
   @@index([type])
 }
 

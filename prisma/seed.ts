@@ -17,33 +17,32 @@ async function main() {
   //    Warehouses dihapus SEBELUM Departmen karena FK
   //    Warehouse.departmen_id memakai onDelete: Restrict.
   // ==========================================
-  try {
-    console.log('🧹 Cleaning existing data...');
-    await prisma.billingItem.deleteMany();
-    await prisma.billing.deleteMany();
-    await prisma.recipeDetail.deleteMany();
-    await prisma.doctorRecipe.deleteMany();
-    await prisma.doctorAssesment.deleteMany();
-    await prisma.nursingAssesment.deleteMany();
-    await prisma.visit.deleteMany();
-    await prisma.doctorAppoinment.deleteMany();
-    await prisma.slotPractice.deleteMany();
-    await prisma.doctorPractice.deleteMany();
-    await prisma.patientAllergy.deleteMany();
-    await prisma.inventoryLogs.deleteMany();
-    await prisma.stockBatch.deleteMany();
-    await prisma.warehouseStock.deleteMany();
-    await prisma.warehouses.deleteMany();
-    await prisma.products.deleteMany();
-    await prisma.patient.deleteMany();
-    await prisma.employee.deleteMany();
-    await prisma.departmen.deleteMany();
-    await prisma.hospital.deleteMany();
-    await prisma.user.deleteMany();
-    console.log('🧹 Cleanup complete.');
-  } catch (cleanupErr: any) {
-    console.warn('⚠️ Cleanup warning (continuing):', cleanupErr.message || cleanupErr);
-  }
+  console.log('🧹 Cleaning existing data...');
+  await prisma.billingItem.deleteMany();
+  await prisma.billing.deleteMany();
+  await prisma.requisitionItems.deleteMany();
+  await prisma.requisitions.deleteMany();
+  await prisma.recipeDetail.deleteMany();
+  await prisma.doctorRecipe.deleteMany();
+  await prisma.doctorAssesment.deleteMany();
+  await prisma.nursingAssesment.deleteMany();
+  await prisma.visitUsage.deleteMany();
+  await prisma.visit.deleteMany();
+  await prisma.doctorAppoinment.deleteMany();
+  await prisma.slotPractice.deleteMany();
+  await prisma.doctorPractice.deleteMany();
+  await prisma.patientAllergy.deleteMany();
+  await prisma.inventoryLogs.deleteMany();
+  await prisma.stockBatch.deleteMany();
+  await prisma.warehouseStock.deleteMany();
+  await prisma.warehouses.deleteMany();
+  await prisma.products.deleteMany();
+  await prisma.patient.deleteMany();
+  await prisma.employee.deleteMany();
+  await prisma.departmen.deleteMany();
+  await prisma.hospital.deleteMany();
+  await prisma.user.deleteMany();
+  console.log('🧹 Cleanup complete.');
 
   const saltRounds = 10;
   const hashedPassword = await bcrypt.hash('Medsync1Super2Admin3', saltRounds);
@@ -485,13 +484,14 @@ async function main() {
   //     warehouse_id juga WAJIB diisi di sini dan
   //     menunjuk langsung ke tabel Warehouses.
   // ==========================================
-  await prisma.stockBatch.create({
+  const paracetamolBatch = await prisma.stockBatch.create({
     data: {
       hospital_id: hospital.id,
       product_id: paracetamol.id,
       warehouse_id: centralWarehouse.id,
       batch_number: 'BATCH-PCM-2026X',
       exp_date: new Date('2028-11-30'),
+      buy_price: paracetamol.buy_price,
       initial_stock: 500,
       current_stock: 500,
       reference_number: 'PO-2026-001',
@@ -507,6 +507,7 @@ async function main() {
       warehouse_id: prescriptionDepot.id,
       batch_number: 'BATCH-AML-2026Y',
       exp_date: new Date('2027-08-15'),
+      buy_price: amlodipin.buy_price,
       initial_stock: 150,
       current_stock: 150,
       reference_number: 'PO-2026-002',
@@ -517,7 +518,40 @@ async function main() {
   console.log('✅ 9. Tabel StockBatch seeded.');
 
   // ==========================================
-  // 11. SEED INVENTORY LOGS (Tabel: InventoryLogs)
+  // 11. SEED REQUISITIONS (Tabel: Requisitions & RequisitionItems)
+  // ==========================================
+  const requisition = await prisma.requisitions.create({
+    data: {
+      hospital_id: hospital.id,
+      requisition_number: 'AMP/2026/10/0001',
+      requesting_warehouse_id: prescriptionDepot.id,
+      target_warehouse_id: centralWarehouse.id,
+      requested_by_id: pharmacistUser.id,
+      approved_by_id: logisticUser.id,
+      status: 'PARTIAL',
+      notes: 'Pengadaan ulang stok obat depo farmasi rawat jalan.',
+      items: {
+        create: [
+          {
+            product_id: paracetamol.id,
+            quantity_requested: 100,
+            quantity_approved: 100,
+            notes: 'Stok rutin depo farmasi.',
+          },
+          {
+            product_id: amlodipin.id,
+            quantity_requested: 50,
+            quantity_approved: 40,
+            notes: 'Persetujuan disesuaikan dengan stok tersedia.',
+          },
+        ],
+      },
+    },
+  });
+  console.log(`✅ 10. Requisition seeded (${requisition.requisition_number}, 2 item).`);
+
+  // ==========================================
+  // 12. SEED INVENTORY LOGS (Tabel: InventoryLogs)
   //     PENTING: InventoryLogs.user_id mengarah ke tabel User
   //     (relasi "UserWriter"), BUKAN ke tabel Employee. Mengirim
   //     Employee.id ke sini memicu error:
@@ -529,15 +563,17 @@ async function main() {
       hospital_id: hospital.id,
       product_id: paracetamol.id,
       warehouse_id: centralWarehouse.id,
+      stock_batch_id: paracetamolBatch.id,
       user_id: logisticUser.id,
       type: 'PURCHASE',
       quantity: 500,
-      source_destination: 'PT Kimia Farma Utama',
+      stock_before: 0,
+      stock_after: 500,
       reference_number: 'PO-2026-001',
       notes: 'Pembelian awal stok gudang utama',
     },
   });
-  console.log('✅ 10. Tabel InventoryLogs seeded.');
+  console.log('✅ 11. Tabel InventoryLogs seeded.');
 
   // ==========================================
   // 12. SEED PATIENT ALLERGY (Tabel: PatientAllergy)
@@ -552,7 +588,7 @@ async function main() {
       reaction: 'Anafilaksis / Sesak napas & biduran',
     },
   });
-  console.log('✅ 11. Tabel PatientAllergy seeded.');
+  console.log('✅ 12. Tabel PatientAllergy seeded.');
 
   // ==========================================
   // 13. SEED DOCTOR PRACTICE (Tabel: DoctorPractice)
@@ -563,7 +599,7 @@ async function main() {
       practice_date: new Date(),
     },
   });
-  console.log('✅ 12. Tabel DoctorPractice seeded.');
+  console.log('✅ 13. Tabel DoctorPractice seeded.');
 
   // ==========================================
   // 14. SEED SLOT PRACTICE (Tabel: SlotPractice)
@@ -578,7 +614,7 @@ async function main() {
       max_patient: 20,
     },
   });
-  console.log('✅ 13. Tabel SlotPractice seeded.');
+  console.log('✅ 14. Tabel SlotPractice seeded.');
 
   // ==========================================
   // 15. SEED DOCTOR APPOINTMENT (Tabel: DoctorAppoinment)
@@ -591,7 +627,7 @@ async function main() {
       queue_number: 1,
     },
   });
-  console.log('✅ 14. Tabel DoctorAppoinment seeded.');
+  console.log('✅ 15. Tabel DoctorAppoinment seeded.');
 
   // ==========================================
   // 16. SEED VISIT (Tabel: Visit with service_unit)
@@ -607,10 +643,25 @@ async function main() {
       detail_sympton: 'Nyeri saat menelan ludah dan makanan',
     },
   });
-  console.log('✅ 15. Tabel Visit seeded.');
+  console.log('✅ 16. Tabel Visit seeded.');
 
   // ==========================================
-  // 17. SEED NURSING ASSESSMENT (Tabel: NursingAssesment)
+  // 17. SEED VISIT USAGE (Tabel: VisitUsage)
+  // ==========================================
+  await prisma.visitUsage.create({
+    data: {
+      visit_id: visit.id,
+      product_id: amlodipin.id,
+      warehouse_id: prescriptionDepot.id,
+      employee_id: nurseEmployee.id,
+      quantity: 1,
+      notes: 'Pemakaian satu unit obat untuk tindakan pada kunjungan.',
+    },
+  });
+  console.log('✅ 17. Tabel VisitUsage seeded.');
+
+  // ==========================================
+  // 18. SEED NURSING ASSESSMENT (Tabel: NursingAssesment)
   // ==========================================
   await prisma.nursingAssesment.create({
     data: {
@@ -627,7 +678,7 @@ async function main() {
       notes: 'Triage awal: Pasien sadar, demam hangat.',
     },
   });
-  console.log('✅ 16. Tabel NursingAssesment seeded.');
+  console.log('✅ 18. Tabel NursingAssesment seeded.');
 
   // ==========================================
   // 18. SEED DOCTOR ASSESSMENT (Tabel: DoctorAssesment)
@@ -644,7 +695,7 @@ async function main() {
       doctorNotes: 'Anjurkan banyak minum air putih dan istirahat total.',
     },
   });
-  console.log('✅ 17. Tabel DoctorAssesment seeded.');
+  console.log('✅ 19. Tabel DoctorAssesment seeded.');
 
   // ==========================================
   // 19. SEED DOCTOR RECIPE (Tabel: DoctorRecipe)
@@ -663,7 +714,7 @@ async function main() {
       verify_notes: 'Resep terverifikasi aman, tidak ada konflik alergi.',
     },
   });
-  console.log('✅ 18. Tabel DoctorRecipe seeded.');
+  console.log('✅ 20. Tabel DoctorRecipe seeded.');
 
   // ==========================================
   // 20. SEED RECIPE DETAIL (Tabel: RecipeDetail)
@@ -685,7 +736,7 @@ async function main() {
       end_date: futureDate,
     },
   });
-  console.log('✅ 19. Tabel RecipeDetail seeded.');
+  console.log('✅ 21. Tabel RecipeDetail seeded.');
 
   // ==========================================
   // 21. SEED BILLING & BILLING ITEMS (Tabel Baru)
@@ -731,7 +782,7 @@ async function main() {
       subtotal: DRUG_SUBTOTAL,
     },
   });
-  console.log('✅ 20. Tabel Billing & BillingItem seeded.');
+  console.log('✅ 22. Tabel Billing & BillingItem seeded.');
 
   console.log('🎉 Seeding ALL TABLES (with new fields & billing) selesai dengan sukses!');
   console.log('🔑 Akun seed (email / password):');
