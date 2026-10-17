@@ -137,7 +137,8 @@ enum RequisitionStatus {
   APPROVED     // Disetujui oleh Gudang Logistik/Farmasi
   PARTIAL      // Disetujui sebagian
   REJECTED     // Ditolak
-  DISTRIBUTED  // Barang sudah dikirim/diterima oleh pemohon
+  SHIPPED      // Barang sudah dikirim
+  COMPLETED    // Barang sudah diterima
   CANCELLED    // Dibatalkan oleh pemohon
 }
 

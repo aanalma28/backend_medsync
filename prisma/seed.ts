@@ -464,7 +464,7 @@ async function main() {
     data: {
       product_id: paracetamol.id,
       warehouse_id: centralWarehouse.id,
-      stock: 500,
+      stock: 400,
       min_stock: 50,
     },
   });
@@ -472,8 +472,26 @@ async function main() {
   await prisma.warehouseStock.create({
     data: {
       product_id: amlodipin.id,
+      warehouse_id: centralWarehouse.id,
+      stock: 260,
+      min_stock: 30,
+    },
+  });
+
+  await prisma.warehouseStock.create({
+    data: {
+      product_id: paracetamol.id,
       warehouse_id: prescriptionDepot.id,
-      stock: 150,
+      stock: 100,
+      min_stock: 20,
+    },
+  });
+
+  await prisma.warehouseStock.create({
+    data: {
+      product_id: amlodipin.id,
+      warehouse_id: prescriptionDepot.id,
+      stock: 190,
       min_stock: 15,
     },
   });
@@ -493,14 +511,46 @@ async function main() {
       exp_date: new Date('2028-11-30'),
       buy_price: paracetamol.buy_price,
       initial_stock: 500,
-      current_stock: 500,
+      current_stock: 400,
       reference_number: 'PO-2026-001',
       supplier_name: 'PT Kimia Farma Utama',
       notes: 'Batch pertama untuk gudang utama',
     },
   });
 
-  await prisma.stockBatch.create({
+  const amlodipinCentralBatch = await prisma.stockBatch.create({
+    data: {
+      hospital_id: hospital.id,
+      product_id: amlodipin.id,
+      warehouse_id: centralWarehouse.id,
+      batch_number: 'BATCH-AML-2026Z',
+      exp_date: new Date('2028-02-28'),
+      buy_price: amlodipin.buy_price,
+      initial_stock: 300,
+      current_stock: 260,
+      reference_number: 'PO-2026-002',
+      supplier_name: 'PT Kalbe Farma Tbk',
+      notes: 'Batch persediaan gudang utama sebelum amprahan',
+    },
+  });
+
+  const paracetamolDepotBatch = await prisma.stockBatch.create({
+    data: {
+      hospital_id: hospital.id,
+      product_id: paracetamol.id,
+      warehouse_id: prescriptionDepot.id,
+      batch_number: 'BATCH-PCM-2026X-AMP',
+      exp_date: new Date('2028-11-30'),
+      buy_price: paracetamol.buy_price,
+      initial_stock: 100,
+      current_stock: 100,
+      reference_number: 'AMP/2026/10/0001',
+      supplier_name: 'PT Kimia Farma Utama',
+      notes: 'Penerimaan batch dari amprahan gudang utama',
+    },
+  });
+
+  const amlodipinBatch = await prisma.stockBatch.create({
     data: {
       hospital_id: hospital.id,
       product_id: amlodipin.id,
@@ -509,12 +559,13 @@ async function main() {
       exp_date: new Date('2027-08-15'),
       buy_price: amlodipin.buy_price,
       initial_stock: 150,
-      current_stock: 150,
-      reference_number: 'PO-2026-002',
+      current_stock: 190,
+      reference_number: 'PO-2026-003',
       supplier_name: 'PT Kalbe Farma Tbk',
-      notes: 'Batch pertama untuk depo farmasi resep',
+      notes: 'Batch depo farmasi termasuk penerimaan dari amprahan',
     },
   });
+
   console.log('✅ 9. Tabel StockBatch seeded.');
 
   // ==========================================
@@ -528,21 +579,22 @@ async function main() {
       target_warehouse_id: centralWarehouse.id,
       requested_by_id: pharmacistUser.id,
       approved_by_id: logisticUser.id,
-      status: 'PARTIAL',
-      notes: 'Pengadaan ulang stok obat depo farmasi rawat jalan.',
+      status: 'COMPLETED',
+      notes:
+        'Amprahan depo farmasi; disetujui sebagian, dikirim dari gudang utama, dan telah diterima.',
       items: {
         create: [
           {
             product_id: paracetamol.id,
             quantity_requested: 100,
             quantity_approved: 100,
-            notes: 'Stok rutin depo farmasi.',
+            notes: 'Stok rutin depo farmasi; 100 strip diterima.',
           },
           {
             product_id: amlodipin.id,
             quantity_requested: 50,
             quantity_approved: 40,
-            notes: 'Persetujuan disesuaikan dengan stok tersedia.',
+            notes: 'Disetujui sebagian; 40 strip diterima.',
           },
         ],
       },
@@ -558,22 +610,106 @@ async function main() {
   //     "Foreign key constraint violated: InventoryLogs_user_id_fkey".
   //     Kolom employee_id baru dipakai pada model VisitUsage.
   // ==========================================
-  await prisma.inventoryLogs.create({
-    data: {
-      hospital_id: hospital.id,
-      product_id: paracetamol.id,
-      warehouse_id: centralWarehouse.id,
-      stock_batch_id: paracetamolBatch.id,
-      user_id: logisticUser.id,
-      type: 'PURCHASE',
-      quantity: 500,
-      stock_before: 0,
-      stock_after: 500,
-      reference_number: 'PO-2026-001',
-      notes: 'Pembelian awal stok gudang utama',
-    },
+  await prisma.inventoryLogs.createMany({
+    data: [
+      {
+        hospital_id: hospital.id,
+        product_id: paracetamol.id,
+        warehouse_id: centralWarehouse.id,
+        stock_batch_id: paracetamolBatch.id,
+        user_id: logisticUser.id,
+        type: 'PURCHASE',
+        quantity: 500,
+        stock_before: 0,
+        stock_after: 500,
+        reference_number: 'PO-2026-001',
+        notes: 'Pembelian awal stok paracetamol gudang utama',
+      },
+      {
+        hospital_id: hospital.id,
+        product_id: amlodipin.id,
+        warehouse_id: centralWarehouse.id,
+        stock_batch_id: amlodipinCentralBatch.id,
+        user_id: logisticUser.id,
+        type: 'PURCHASE',
+        quantity: 300,
+        stock_before: 0,
+        stock_after: 300,
+        reference_number: 'PO-2026-002',
+        notes: 'Pembelian awal stok amlodipin gudang utama',
+      },
+      {
+        hospital_id: hospital.id,
+        product_id: amlodipin.id,
+        warehouse_id: prescriptionDepot.id,
+        stock_batch_id: amlodipinBatch.id,
+        user_id: pharmacistUser.id,
+        type: 'PURCHASE',
+        quantity: 150,
+        stock_before: 0,
+        stock_after: 150,
+        reference_number: 'PO-2026-003',
+        notes: 'Stok awal amlodipin depo farmasi',
+      },
+      {
+        hospital_id: hospital.id,
+        product_id: paracetamol.id,
+        warehouse_id: centralWarehouse.id,
+        target_warehouse_id: prescriptionDepot.id,
+        stock_batch_id: paracetamolBatch.id,
+        user_id: logisticUser.id,
+        type: 'TRANSFER_OUT',
+        quantity: -100,
+        stock_before: 500,
+        stock_after: 400,
+        reference_number: requisition.requisition_number,
+        notes: 'Amprahan dikirim ke depo farmasi',
+      },
+      {
+        hospital_id: hospital.id,
+        product_id: paracetamol.id,
+        warehouse_id: prescriptionDepot.id,
+        target_warehouse_id: prescriptionDepot.id,
+        stock_batch_id: paracetamolDepotBatch.id,
+        user_id: logisticUser.id,
+        type: 'TRANSFER_IN',
+        quantity: 100,
+        stock_before: 0,
+        stock_after: 100,
+        reference_number: requisition.requisition_number,
+        notes: 'Penerimaan amprahan dari gudang utama',
+      },
+      {
+        hospital_id: hospital.id,
+        product_id: amlodipin.id,
+        warehouse_id: centralWarehouse.id,
+        target_warehouse_id: prescriptionDepot.id,
+        stock_batch_id: amlodipinCentralBatch.id,
+        user_id: logisticUser.id,
+        type: 'TRANSFER_OUT',
+        quantity: -40,
+        stock_before: 300,
+        stock_after: 260,
+        reference_number: requisition.requisition_number,
+        notes: 'Amprahan disetujui sebagian dan dikirim ke depo farmasi',
+      },
+      {
+        hospital_id: hospital.id,
+        product_id: amlodipin.id,
+        warehouse_id: prescriptionDepot.id,
+        target_warehouse_id: prescriptionDepot.id,
+        stock_batch_id: amlodipinBatch.id,
+        user_id: logisticUser.id,
+        type: 'TRANSFER_IN',
+        quantity: 40,
+        stock_before: 150,
+        stock_after: 190,
+        reference_number: requisition.requisition_number,
+        notes: 'Penerimaan parsial amprahan dari gudang utama',
+      },
+    ],
   });
-  console.log('✅ 11. Tabel InventoryLogs seeded.');
+  console.log('✅ 11. Tabel InventoryLogs seeded (stok awal dan mutasi amprahan).');
 
   // ==========================================
   // 12. SEED PATIENT ALLERGY (Tabel: PatientAllergy)

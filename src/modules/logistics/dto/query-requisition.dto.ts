@@ -5,7 +5,7 @@ export class QueryRequisitionDto {
   @IsOptional()
   @IsEnum(RequisitionStatus, {
     message:
-      'Status requisition harus salah satu dari: PENDING, APPROVED, PARTIAL, REJECTED, DISTRIBUTED, CANCELLED',
+      'Status requisition harus salah satu dari: PENDING, APPROVED, PARTIAL, REJECTED, SHIPPED, COMPLETED, CANCELLED',
   })
   status?: RequisitionStatus;
 
